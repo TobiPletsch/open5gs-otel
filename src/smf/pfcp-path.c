@@ -292,6 +292,13 @@ static void sess_5gc_timeout(ogs_pfcp_xact_t *xact, void *data)
     smf_ue = smf_ue_find_by_id(sess->smf_ue_id);
     ogs_assert(smf_ue);
 
+    /*
+     * Transaction timeouts run from the timer manager, outside any FSM
+     * dispatch: make the session span current so these log lines are
+     * correlated with the trace too.
+     */
+    ogs_otel_span_activate(sess->establishment_span);
+
     /* The delayed indirect tunnel REMOVE, if this is it, is gone */
     if (sess->handover.indirect_remove_xact_id == xact->id)
         sess->handover.indirect_remove_xact_id = OGS_INVALID_POOL_ID;
@@ -387,6 +394,8 @@ static void sess_5gc_timeout(ogs_pfcp_xact_t *xact, void *data)
         ogs_error("Not implemented [type:%d]", type);
         break;
     }
+
+    ogs_otel_span_activate(NULL);
 }
 
 static void qos_flow_5gc_timeout(ogs_pfcp_xact_t *xact, void *data)
