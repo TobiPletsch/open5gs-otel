@@ -79,6 +79,7 @@ void smf_otel_establishment_end(smf_sess_t *sess, const char *outcome,
     char plmn_id[OGS_PLMNIDSTRLEN];
     char ue_ref[OGS_OTEL_UE_REF_LEN];
     char error_type[32];
+    char sd[8];
 
     ogs_assert(sess);
     ogs_assert(outcome);
@@ -101,8 +102,11 @@ void smf_otel_establishment_end(smf_sess_t *sess, const char *outcome,
         ogs_otel_span_set_int(span, "5gs.ssc_mode", sess->ue_ssc_mode);
 
     ogs_otel_span_set_int(span, "5gs.s_nssai.sst", sess->s_nssai.sst);
-    if (sess->s_nssai.sd.v != OGS_S_NSSAI_NO_SD_VALUE)
-        ogs_otel_span_set_int(span, "5gs.s_nssai.sd", sess->s_nssai.sd.v);
+    if (sess->s_nssai.sd.v != OGS_S_NSSAI_NO_SD_VALUE) {
+        /* hex, as in the configuration and 3GPP notation (e.g. 111111) */
+        ogs_snprintf(sd, sizeof(sd), "%06x", (unsigned int)sess->s_nssai.sd.v);
+        ogs_otel_span_set_str(span, "5gs.s_nssai.sd", sd);
+    }
     ogs_otel_span_set_str(span, "5gs.plmn_id",
             ogs_plmn_id_to_string(&sess->serving_plmn_id, plmn_id));
 
