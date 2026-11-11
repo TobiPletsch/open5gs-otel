@@ -501,7 +501,6 @@ bool smf_nsmf_handle_create_sm_context(
      * If Home-Routed Roaming,
      * Send HTTP_STATUS_CREATED(/nsmf-pdusession/v1/sm-context) to the AMF
      *********************************************************************/
-    smf_otel_establishment_event(sess, "sm_context_created");
     smf_sbi_send_sm_context_created_data(sess, stream);
 
     /* Select UPF based on UE Location Information */

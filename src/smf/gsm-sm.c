@@ -873,6 +873,7 @@ void smf_gsm_state_wait_5gc_sm_policy_association(ogs_fsm_t *s, smf_event_t *e)
                     OGS_FSM_TRAN(s, smf_gsm_state_5gc_n1_n2_reject);
                 } else if (smf_npcf_smpolicycontrol_handle_create(
                         sess, stream, sbi_message) == true) {
+                    smf_otel_establishment_event(sess, "pcf_sm_policy_created");
                     OGS_FSM_TRAN(s,
                         &smf_gsm_state_wait_pfcp_establishment);
                 } else {

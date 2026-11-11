@@ -20,6 +20,7 @@
 #include "context.h"
 #include "ngap-path.h"
 #include "sbi-path.h"
+#include "otel.h"
 
 int smf_sbi_open(void)
 {
@@ -388,6 +389,11 @@ void smf_sbi_send_sm_context_created_data(
     ogs_assert(response);
     ogs_assert(true == ogs_sbi_server_send_response(stream, response));
 
+    /*
+     * pdusessioncreationsucc counts this 201 Created, which is sent before
+     * PCF/PFCP; the span only succeeds once the user plane is active.
+     */
+    smf_otel_establishment_event(sess, "sm_context_created");
     smf_metrics_inst_by_slice_add(&sess->serving_plmn_id, &sess->s_nssai,
             SMF_METR_CTR_SM_PDUSESSIONCREATIONSUCC, 1);
 
