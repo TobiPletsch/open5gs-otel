@@ -19,6 +19,7 @@
 
 #include "gsm-build.h"
 #include "gsm-handler.h"
+#include "otel.h"
 
 #undef OGS_LOG_DOMAIN
 #define OGS_LOG_DOMAIN __gsm_log_domain
@@ -325,6 +326,9 @@ ogs_pkbuf_t *gsm_build_pdu_session_establishment_reject(
 
     ogs_assert(sess);
     ogs_assert(gsm_cause);
+
+    smf_otel_establishment_end(sess, OGS_OTEL_OUTCOME_FAILURE, gsm_cause, 0,
+            "PDU Session Establishment Reject");
 
     memset(&message, 0, sizeof(message));
     message.gsm.h.extended_protocol_discriminator =

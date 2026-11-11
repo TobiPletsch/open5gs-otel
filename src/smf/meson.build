@@ -113,6 +113,7 @@ libsmf_sources = files('''
     ngap-path.c
     local-path.c
     metrics.c
+    otel.c
     pdu-info.c
     ../../lib/metrics/prometheus/json_pager.c
 '''.split())
@@ -120,6 +121,7 @@ libsmf_sources = files('''
 libsmf = static_library('smf',
     sources : libsmf_sources,
     dependencies : [libmetrics_dep,
+                    libotel_dep,
                     libsbi_dep,
                     libngap_dep,
                     libnas_5gs_dep,
@@ -132,6 +134,7 @@ libsmf = static_library('smf',
 libsmf_dep = declare_dependency(
     link_with : libsmf,
     dependencies : [libmetrics_dep,
+                    libotel_dep,
                     libsbi_dep,
                     libngap_dep,
                     libnas_5gs_dep,

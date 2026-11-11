@@ -40,6 +40,8 @@ int smf_initialize(void)
     rv = ogs_app_parse_local_conf(APP_NAME);
     if (rv != OGS_OK) return rv;
 
+    ogs_otel_init("open5gs-smf", ogs_app()->version);
+
     smf_metrics_init();
 
     ogs_gtp_context_init(ogs_app()->pool.nf * OGS_MAX_NUM_OF_GTPU_RESOURCE);
@@ -127,6 +129,9 @@ void smf_terminate(void)
     ogs_gtp_xact_final();
 
     smf_metrics_final();
+
+    /* After smf_context_final(): spans of removed sessions are flushed too */
+    ogs_otel_final();
 }
 
 static void smf_main(void *data)
@@ -168,6 +173,9 @@ static void smf_main(void *data)
             ogs_assert(e);
             ogs_fsm_dispatch(&smf_sm, e);
             ogs_event_free(e);
+
+            /* A session's trace context never leaks into the next event */
+            ogs_otel_span_activate(NULL);
         }
     }
 done:

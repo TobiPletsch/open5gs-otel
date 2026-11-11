@@ -21,6 +21,7 @@
 #include "ngap-build.h"
 #include "gmm-build.h"
 #include "nas-path.h"
+#include "otel.h"
 
 int nas_5gs_send_to_gnb(amf_ue_t *amf_ue, ogs_pkbuf_t *pkbuf)
 {
@@ -180,6 +181,15 @@ int nas_5gs_send_registration_accept(amf_ue_t *amf_ue)
     if (rv == OGS_OK && amf_ue->next.m_tmsi)
         amf_ue_publish_next_guti(amf_ue);
 
+    amf_otel_registration_event(amf_ue, "registration_accept_sent");
+    /*
+     * Without a new 5G-GUTI no Registration Complete is expected
+     * (no T3550), so the Accept is the terminal success. Note that
+     * fivegs_amffunction_rm_reg*succ is not incremented on this path.
+     */
+    if (rv == OGS_OK && !amf_ue->next.m_tmsi)
+        amf_otel_registration_end(amf_ue, OGS_OTEL_OUTCOME_SUCCESS, 0, NULL);
+
     return rv;
 }
 
@@ -215,6 +225,8 @@ int nas_5gs_send_registration_reject(
     }
 
     ogs_warn("[%s] Registration reject [%d]", amf_ue->suci, gmm_cause);
+    amf_otel_registration_end(amf_ue, OGS_OTEL_OUTCOME_FAILURE, gmm_cause,
+            "Registration reject");
 
     gmmbuf = gmm_build_registration_reject(amf_ue, gmm_cause);
     if (!gmmbuf) {
@@ -443,6 +455,7 @@ int nas_5gs_send_identity_request(amf_ue_t *amf_ue)
     }
 
     ogs_debug("Identity request");
+    amf_otel_registration_event(amf_ue, "identity_request_sent");
 
     if (amf_ue->t3570.pkbuf) {
         gmmbuf = amf_ue->t3570.pkbuf;
@@ -487,6 +500,7 @@ int nas_5gs_send_authentication_request(amf_ue_t *amf_ue)
     }
 
     ogs_debug("[%s] Authentication request", amf_ue->suci);
+    amf_otel_registration_event(amf_ue, "authentication_request_sent");
 
     if (amf_ue->t3560.pkbuf) {
         gmmbuf = amf_ue->t3560.pkbuf;
@@ -533,6 +547,8 @@ int nas_5gs_send_authentication_reject(amf_ue_t *amf_ue)
     }
 
     ogs_warn("[%s] Authentication reject", amf_ue->suci);
+    amf_otel_registration_end(amf_ue, OGS_OTEL_OUTCOME_FAILURE, 0,
+            "Authentication reject");
 
     gmmbuf = gmm_build_authentication_reject();
     if (!gmmbuf) {
@@ -566,6 +582,7 @@ int nas_5gs_send_security_mode_command(amf_ue_t *amf_ue)
     }
 
     ogs_debug("[%s] Security mode command", amf_ue->supi);
+    amf_otel_registration_event(amf_ue, "security_mode_command_sent");
 
     if (amf_ue->t3560.pkbuf) {
         gmmbuf = amf_ue->t3560.pkbuf;

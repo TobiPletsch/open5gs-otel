@@ -24,6 +24,7 @@
 #include "local-path.h"
 #include "gsm-handler.h"
 #include "nsmf-handler.h"
+#include "otel.h"
 
 bool smf_nsmf_handle_create_sm_context(
     smf_sess_t *sess, ogs_sbi_stream_t *stream, ogs_sbi_message_t *message)
@@ -57,6 +58,8 @@ bool smf_nsmf_handle_create_sm_context(
     ogs_assert(sess);
     smf_ue = smf_ue_find_by_id(sess->smf_ue_id);
     ogs_assert(smf_ue);
+
+    smf_otel_establishment_start(sess);
 
     SmContextCreateData = message->SmContextCreateData;
     if (!SmContextCreateData) {
@@ -498,6 +501,7 @@ bool smf_nsmf_handle_create_sm_context(
      * If Home-Routed Roaming,
      * Send HTTP_STATUS_CREATED(/nsmf-pdusession/v1/sm-context) to the AMF
      *********************************************************************/
+    smf_otel_establishment_event(sess, "sm_context_created");
     smf_sbi_send_sm_context_created_data(sess, stream);
 
     /* Select UPF based on UE Location Information */

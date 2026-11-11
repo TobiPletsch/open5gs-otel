@@ -38,6 +38,8 @@ int amf_initialize(void)
     rv = ogs_app_parse_local_conf(APP_NAME);
     if (rv != OGS_OK) return rv;
 
+    ogs_otel_init("open5gs-amf", ogs_app()->version);
+
     amf_metrics_init();
 
     ogs_sbi_context_init(OpenAPI_nf_type_AMF);
@@ -96,6 +98,9 @@ void amf_terminate(void)
     ogs_sbi_context_final();
 
     amf_metrics_final();
+
+    /* After amf_context_final(): spans of removed UEs are flushed too */
+    ogs_otel_final();
 }
 
 static void amf_main(void *data)
@@ -137,6 +142,9 @@ static void amf_main(void *data)
             ogs_assert(e);
             ogs_fsm_dispatch(&amf_sm, e);
             ogs_event_free(e);
+
+            /* A UE's trace context never leaks into the next event */
+            ogs_otel_span_activate(NULL);
         }
     }
 done:

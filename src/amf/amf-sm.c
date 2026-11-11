@@ -460,6 +460,7 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
             e->h.sbi.message = &sbi_message;;
             e->h.sbi.state = state;
 
+            ogs_otel_span_activate(amf_ue->registration_span);
             ogs_fsm_dispatch(&amf_ue->sm, e);
             break;
 
@@ -1190,6 +1191,7 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
         e->amf_ue_id = amf_ue->id;
         e->nas.message = &nas_message;
 
+        ogs_otel_span_activate(amf_ue->registration_span);
         ogs_fsm_dispatch(&amf_ue->sm, e);
 
         ogs_pkbuf_free(pkbuf);
@@ -1204,6 +1206,7 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
 
         ogs_assert(OGS_FSM_STATE(&amf_ue->sm));
 
+        ogs_otel_span_activate(amf_ue->registration_span);
         ogs_fsm_dispatch(&amf_ue->sm, e);
         break;
 

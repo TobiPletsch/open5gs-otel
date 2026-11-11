@@ -18,6 +18,7 @@
  */
 
 #include "ngap-path.h"
+#include "otel.h"
 
 static amf_context_t self;
 
@@ -1845,6 +1846,9 @@ void amf_ue_remove(amf_ue_t *amf_ue)
     ran_ue_t *ran_ue_holding = NULL;
 
     ogs_assert(amf_ue);
+
+    amf_otel_registration_end(amf_ue, OGS_OTEL_OUTCOME_ABORTED, 0,
+            "UE context removed");
 
     /*
      * A held NG context keeps a reference back to this context. Sever it

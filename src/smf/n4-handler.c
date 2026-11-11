@@ -26,6 +26,7 @@
 #include "sbi-path.h"
 #include "ngap-path.h"
 #include "fd-path.h"
+#include "otel.h"
 
 uint8_t gtp_cause_from_pfcp(uint8_t pfcp_cause, uint8_t gtp_version)
 {
@@ -181,8 +182,10 @@ uint8_t smf_5gc_n4_handle_session_establishment_response(
         cause_value = OGS_PFCP_CAUSE_MANDATORY_IE_MISSING;
     }
 
-    if (cause_value != OGS_PFCP_CAUSE_REQUEST_ACCEPTED)
+    if (cause_value != OGS_PFCP_CAUSE_REQUEST_ACCEPTED) {
+        smf_otel_establishment_set_int(sess, "5gs.pfcp.cause", cause_value);
         return cause_value;
+    }
 
     for (i = 0; i < OGS_MAX_NUM_OF_PDR; i++) {
         pdr = ogs_pfcp_handle_created_pdr(
@@ -842,6 +845,7 @@ void smf_5gc_n4_handle_session_modification_response(
                 smf_sbi_send_sm_context_updated_data_up_cnx_state(
                         sess, stream, OpenAPI_up_cnx_state_ACTIVATED);
             } else {
+                smf_otel_establishment_event(sess, "pfcp_session_activated");
                 r = smf_sbi_discover_and_send(
                         OpenAPI_service_name_nudm_uecm, NULL,
                         smf_nudm_uecm_build_registration,

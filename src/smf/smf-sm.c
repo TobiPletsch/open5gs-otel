@@ -32,6 +32,7 @@
 #include "npcf-handler.h"
 #include "nsmf-handler.h"
 #include "binding.h"
+#include "otel.h"
 
 void smf_state_initial(ogs_fsm_t *s, smf_event_t *e)
 {
@@ -173,6 +174,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
                     gtp2_sender_f_teid.teid_presence, gtp2_sender_f_teid.teid);
 
             e->sess_id = sess->id;
+            ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         case OGS_GTP2_DELETE_SESSION_REQUEST_TYPE:
@@ -201,6 +203,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
                 }
             }
             e->sess_id = sess->id;
+            ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         case OGS_GTP2_MODIFY_BEARER_REQUEST_TYPE:
@@ -240,6 +243,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
                 break;
             }
             e->sess_id = sess->id;
+            ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         case OGS_GTP2_BEARER_RESOURCE_COMMAND_TYPE:
@@ -306,6 +310,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
                 break;
             }
             e->sess_id = sess->id;
+            ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         case OGS_GTP1_DELETE_PDP_CONTEXT_REQUEST_TYPE:
@@ -318,6 +323,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
                 break;
             }
             e->sess_id = sess->id;
+            ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         case OGS_GTP1_UPDATE_PDP_CONTEXT_REQUEST_TYPE:
@@ -352,9 +358,11 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
         case OGS_DIAM_GX_CMD_CODE_CREDIT_CONTROL:
             switch(gx_message->cc_request_type) {
             case OGS_DIAM_GX_CC_REQUEST_TYPE_INITIAL_REQUEST:
+                ogs_otel_span_activate(sess->establishment_span);
                 ogs_fsm_dispatch(&sess->sm, e);
                 break;
             case OGS_DIAM_GX_CC_REQUEST_TYPE_TERMINATION_REQUEST:
+                ogs_otel_span_activate(sess->establishment_span);
                 ogs_fsm_dispatch(&sess->sm, e);
                 break;
             default:
@@ -389,6 +397,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
 
         switch(gy_message->cmd_code) {
         case OGS_DIAM_GY_CMD_CODE_CREDIT_CONTROL:
+             ogs_otel_span_activate(sess->establishment_span);
              ogs_fsm_dispatch(&sess->sm, e);
             break;
         case OGS_DIAM_GY_CMD_RE_AUTH:
@@ -416,6 +425,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
         switch(s6b_message->cmd_code) {
         case OGS_DIAM_S6B_CMD_AUTHENTICATION_AUTHORIZATION:
         case OGS_DIAM_S6B_CMD_SESSION_TERMINATION:
+            ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         default:
@@ -609,6 +619,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
 
                     e->sess_id = sess->id;
                     e->h.sbi.message = &sbi_message;
+                    ogs_otel_span_activate(sess->establishment_span);
                     ogs_fsm_dispatch(&sess->sm, e);
                 }
                 break;
@@ -678,6 +689,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
 
                     e->sess_id = sess->id;
                     e->h.sbi.message = &sbi_message;
+                    ogs_otel_span_activate(sess->establishment_span);
                     ogs_fsm_dispatch(&sess->sm, e);
                 }
                 break;
@@ -727,6 +739,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
 
                     e->sess_id = sess->id;
                     e->h.sbi.message = &sbi_message;
+                    ogs_otel_span_activate(sess->establishment_span);
                     ogs_fsm_dispatch(&sess->sm, e);
                 }
                 break;
@@ -979,6 +992,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
             e->sess_id = sess->id;
             e->h.sbi.message = &sbi_message;
 
+            ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
 
@@ -1042,6 +1056,10 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
                 ogs_assert(strerror);
 
                 ogs_error("%s", strerror);
+                if (state == SMF_UECM_STATE_REGISTERED)
+                    smf_otel_establishment_end(sess, OGS_OTEL_OUTCOME_FAILURE,
+                            0, sbi_message.res_status,
+                            "UDM UECM registration failed");
                 if (stream)
                     ogs_assert(true ==
                         ogs_sbi_server_send_error(stream,
@@ -1061,6 +1079,10 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
                 smf_metrics_inst_by_slice_add(
                         &sess->serving_plmn_id, &sess->s_nssai,
                         SMF_METR_CTR_SM_PDUSESSIONCREATIONSUCC, 1);
+
+                smf_otel_establishment_event(sess, "udm_uecm_registered");
+                smf_otel_establishment_end(sess,
+                        OGS_OTEL_OUTCOME_SUCCESS, 0, 0, NULL);
             } else if (state == SMF_UECM_STATE_REGISTERED_HR) {
                 if (stream) {
                     if (smf_sbi_send_pdu_session_created_data(
@@ -1413,6 +1435,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
         }
 
         e->nas.message = &nas_message;
+        ogs_otel_span_activate(sess->establishment_span);
         ogs_fsm_dispatch(&sess->sm, e);
 
         ogs_pkbuf_free(pkbuf);
@@ -1430,6 +1453,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
             break;
         }
 
+        ogs_otel_span_activate(sess->establishment_span);
         ogs_fsm_dispatch(&sess->sm, e);
 
         ogs_pkbuf_free(pkbuf);
@@ -1442,6 +1466,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
             break;
         }
 
+        ogs_otel_span_activate(sess->establishment_span);
         ogs_fsm_dispatch(&sess->sm, e);
         break;
 

@@ -398,6 +398,24 @@ int ogs_log_config_domain(const char *domain, const char *level)
     return OGS_OK;
 }
 
+#if defined(__GNUC__)
+#define OGS_LOG_THREAD_LOCAL __thread
+#else
+#define OGS_LOG_THREAD_LOCAL
+#endif
+
+/* " [trace_id=<32> span_id=<16>]" */
+static OGS_LOG_THREAD_LOCAL char log_trace_context[80];
+
+void ogs_log_set_trace_context(const char *trace_id, const char *span_id)
+{
+    if (trace_id && trace_id[0] && span_id && span_id[0])
+        ogs_snprintf(log_trace_context, sizeof(log_trace_context),
+                " [trace_id=%s span_id=%s]", trace_id, span_id);
+    else
+        log_trace_context[0] = '\0';
+}
+
 void ogs_log_vprintf(ogs_log_level_e level, int id,
     ogs_err_t err, const char *file, int line, const char *func,
     int content_only, const char *format, va_list ap)
@@ -440,6 +458,8 @@ void ogs_log_vprintf(ogs_log_level_e level, int id,
         }
 
         if (!content_only) {
+            if (log_trace_context[0])
+                p = ogs_slprintf(p, last, "%s", log_trace_context);
             if (log->print.fileline)
                 p = ogs_slprintf(p, last, " (%s:%d)", file, line);
             if (log->print.function)
@@ -470,6 +490,8 @@ void ogs_log_vprintf(ogs_log_level_e level, int id,
         }
         p = log_content(p, last, format, ap);
         if (!content_only) {
+            if (log_trace_context[0])
+                p = ogs_slprintf(p, last, "%s", log_trace_context);
             p = ogs_slprintf(p, last, " (%s:%d)", file, line);
             p = ogs_slprintf(p, last, " %s()", func);
             p = log_linefeed(p, last);

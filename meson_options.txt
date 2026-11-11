@@ -1,2 +1,4 @@
 option('fuzzing', type: 'boolean', value: false, description: 'Enable fuzzing tests')
 option('lib_fuzzing_engine', type : 'string', value : '', description : 'Path to the libFuzzer engine library')
+option('otel', type: 'boolean', value: false, description: 'Enable OpenTelemetry tracing (requires opentelemetry-cpp with OTLP/HTTP exporter)')
+option('otel_prefix', type: 'string', value: '/usr/local', description: 'Install prefix of opentelemetry-cpp')

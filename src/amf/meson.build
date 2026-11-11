@@ -65,6 +65,7 @@ libamf_sources = files('''
 
     init.c
     metrics.c
+    otel.c
     gnb-info.c
     ue-info.c
     ../../lib/metrics/prometheus/json_pager.c
@@ -73,6 +74,7 @@ libamf_sources = files('''
 libamf = static_library('amf',
     sources : libamf_sources,
     dependencies : [libmetrics_dep,
+                    libotel_dep,
                     libsctp_dep,
                     libngap_dep,
                     libnas_5gs_dep,
@@ -82,6 +84,7 @@ libamf = static_library('amf',
 libamf_dep = declare_dependency(
     link_with : libamf,
     dependencies : [libmetrics_dep,
+                    libotel_dep,
                     libsctp_dep,
                     libngap_dep,
                     libnas_5gs_dep,

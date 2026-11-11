@@ -37,6 +37,7 @@
 #include "timer.h"
 #include "smf-sm.h"
 #include "metrics.h"
+#include "ogs-otel.h"
 
 #if HAVE_NET_IF_H
 #include <net/if.h>
@@ -566,6 +567,9 @@ typedef struct smf_sess_s {
     ogs_session_t session;
     uint8_t ue_session_type;
     uint8_t ue_ssc_mode;
+
+    /* OpenTelemetry: open "smf.pdu_session.establishment" span (otel.h) */
+    ogs_otel_span_t *establishment_span;
 
     /* PDN Address Allocation (PAA) */
     ogs_paa_t paa;

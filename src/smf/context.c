@@ -20,6 +20,7 @@
 #include "context.h"
 #include "gtp-path.h"
 #include "pfcp-path.h"
+#include "otel.h"
 
 static smf_context_t self;
 static ogs_diam_config_t g_diam_conf;
@@ -2068,6 +2069,9 @@ void smf_sess_remove(smf_sess_t *sess)
     char buf2[OGS_ADDRSTRLEN];
 
     ogs_assert(sess);
+
+    smf_otel_establishment_end(sess, OGS_OTEL_OUTCOME_ABORTED, 0, 0,
+            "session removed");
     smf_ue = smf_ue_find_by_id(sess->smf_ue_id);
     ogs_assert(smf_ue);
 

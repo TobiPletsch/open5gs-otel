@@ -32,12 +32,16 @@
 #include "sbi-path.h"
 #include "amf-sm.h"
 #include "namf-build.h"
+#include "otel.h"
 
 #undef OGS_LOG_DOMAIN
 #define OGS_LOG_DOMAIN __gmm_log_domain
 
 #define AMF_RESTORE_CONTEXT_ON_FAILURE(amf_ue, s) do {                   \
     CLEAR_AMF_UE_TIMER((amf_ue)->t3560);                                 \
+    if ((amf_ue)->nas.message_type == OGS_NAS_5GS_REGISTRATION_REQUEST)  \
+        amf_otel_registration_end((amf_ue), OGS_OTEL_OUTCOME_FAILURE, 0, \
+                "transaction failure");                                  \
     (amf_ue)->registration_session_release_after_authentication = false; \
     if ((amf_ue)->can_restore_context) {                                 \
         amf_ue_restore_memento((amf_ue), &((amf_ue)->memento));            \
@@ -1718,11 +1722,13 @@ static void common_register_state(ogs_fsm_t *s, amf_event_t *e,
 
         switch (nas_message->gmm.h.message_type) {
         case OGS_NAS_5GS_REGISTRATION_REQUEST:
+            amf_otel_registration_start(amf_ue);
             amf_ue->registration_session_release_after_authentication = false;
             ogs_info("Registration request");
             gmm_cause = gmm_handle_registration_request(
                     amf_ue, h, e->ngap.code,
                     &nas_message->gmm.registration_request);
+            amf_otel_registration_update(amf_ue);
 
             switch (amf_ue->nas.registration.value) {
             case OGS_NAS_5GS_REGISTRATION_TYPE_INITIAL:
@@ -2295,9 +2301,11 @@ void gmm_state_authentication(ogs_fsm_t *s, amf_event_t *e)
 
         case OGS_NAS_5GS_REGISTRATION_REQUEST:
             ogs_warn("Registration request");
+            amf_otel_registration_restart(amf_ue);
             gmm_cause = gmm_handle_registration_request(
                     amf_ue, h, e->ngap.code,
                     &nas_message->gmm.registration_request);
+            amf_otel_registration_update(amf_ue);
             if (gmm_cause != OGS_5GMM_CAUSE_REQUEST_ACCEPTED) {
                 ogs_error("[%s] gmm_handle_registration_request() failed [%d]",
                             amf_ue->suci, gmm_cause);
@@ -2949,9 +2957,11 @@ void gmm_state_security_mode(ogs_fsm_t *s, amf_event_t *e)
             break;
         case OGS_NAS_5GS_REGISTRATION_REQUEST:
             ogs_error("Registration request");
+            amf_otel_registration_restart(amf_ue);
             gmm_cause = gmm_handle_registration_request(
                     amf_ue, h, e->ngap.code,
                     &nas_message->gmm.registration_request);
+            amf_otel_registration_update(amf_ue);
             if (gmm_cause != OGS_5GMM_CAUSE_REQUEST_ACCEPTED) {
                 ogs_error("[%s] gmm_handle_registration_request() failed [%d]",
                             amf_ue->suci, gmm_cause);
@@ -3623,14 +3633,20 @@ void gmm_state_initial_context_setup(ogs_fsm_t *s, amf_event_t *e)
                 ogs_error("Unknown reg_type[%d]",
                         amf_ue->nas.registration.value);
             }
+            amf_otel_registration_event(amf_ue,
+                    "registration_complete_received");
+            amf_otel_registration_end(amf_ue,
+                    OGS_OTEL_OUTCOME_SUCCESS, 0, NULL);
             OGS_FSM_TRAN(s, &gmm_state_registered);
             break;
 
         case OGS_NAS_5GS_REGISTRATION_REQUEST:
             ogs_warn("Registration request");
+            amf_otel_registration_restart(amf_ue);
             gmm_cause = gmm_handle_registration_request(
                     amf_ue, h, e->ngap.code,
                     &nas_message->gmm.registration_request);
+            amf_otel_registration_update(amf_ue);
             if (gmm_cause != OGS_5GMM_CAUSE_REQUEST_ACCEPTED) {
                 ogs_error("[%s] gmm_handle_registration_request() failed [%d]",
                             amf_ue->suci, gmm_cause);
@@ -3689,6 +3705,8 @@ void gmm_state_initial_context_setup(ogs_fsm_t *s, amf_event_t *e)
                  * TS 24.501, 5.5.1.2.8(c) and 5.5.1.3.8(c):
                  * abort registration without removing the UE context.
                  */
+                amf_otel_registration_end(amf_ue, OGS_OTEL_OUTCOME_FAILURE, 0,
+                        "T3550 expired: no Registration Complete");
                 CLEAR_AMF_UE_TIMER(amf_ue->t3550);
                 OGS_FSM_TRAN(s, &gmm_state_registered);
 
@@ -3797,6 +3815,8 @@ void gmm_state_exception(ogs_fsm_t *s, amf_event_t *e)
 
     switch (e->h.id) {
     case OGS_FSM_ENTRY_SIG:
+        amf_otel_registration_end(amf_ue, OGS_OTEL_OUTCOME_FAILURE, 0,
+                "GMM exception state");
         AMF_UE_CLEAR_PAGING_INFO(amf_ue);
         AMF_UE_CLEAR_N2_TRANSFER(amf_ue, pdu_session_resource_setup_request);
         AMF_UE_CLEAR_5GSM_MESSAGE(amf_ue);
@@ -3881,9 +3901,11 @@ void gmm_state_exception(ogs_fsm_t *s, amf_event_t *e)
         switch (nas_message->gmm.h.message_type) {
         case OGS_NAS_5GS_REGISTRATION_REQUEST:
             ogs_info("Registration request");
+            amf_otel_registration_restart(amf_ue);
             gmm_cause = gmm_handle_registration_request(
                     amf_ue, h, e->ngap.code,
                     &nas_message->gmm.registration_request);
+            amf_otel_registration_update(amf_ue);
             if (gmm_cause != OGS_5GMM_CAUSE_REQUEST_ACCEPTED) {
                 ogs_error("gmm_handle_registration_request() failed [%d]",
                             gmm_cause);

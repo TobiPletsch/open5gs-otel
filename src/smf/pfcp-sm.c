@@ -113,6 +113,7 @@ void smf_pfcp_state_will_associate(ogs_fsm_t *s, smf_event_t *e)
                 ogs_warn("Session has already been removed");
                 break;
             }
+            if (sess) ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         case SMF_TIMER_PFCP_NO_DELETION_RESPONSE:
@@ -332,6 +333,7 @@ void smf_pfcp_state_associated(ogs_fsm_t *s, smf_event_t *e)
                         OGS_GTP2_CAUSE_CONTEXT_NOT_FOUND);
                 break;
             }
+            if (sess) ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
 
@@ -342,9 +344,12 @@ void smf_pfcp_state_associated(ogs_fsm_t *s, smf_event_t *e)
                 smf_epc_n4_handle_session_modification_response(
                     sess, xact, e->gtp2_message,
                     &message->pfcp_session_modification_response);
-            else
+            else {
+                if (sess)
+                    ogs_otel_span_activate(sess->establishment_span);
                 smf_5gc_n4_handle_session_modification_response(
                     sess, xact, &message->pfcp_session_modification_response);
+            }
             break;
 
         case OGS_PFCP_SESSION_DELETION_RESPONSE_TYPE:
@@ -368,6 +373,7 @@ void smf_pfcp_state_associated(ogs_fsm_t *s, smf_event_t *e)
                         OGS_GTP2_CAUSE_CONTEXT_NOT_FOUND);
                 break;
             }
+            if (sess) ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
 
@@ -381,6 +387,7 @@ void smf_pfcp_state_associated(ogs_fsm_t *s, smf_event_t *e)
                         OGS_PFCP_CAUSE_SESSION_CONTEXT_NOT_FOUND, 0);
                     break;
             }
+            if (sess) ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
 
@@ -406,6 +413,7 @@ void smf_pfcp_state_associated(ogs_fsm_t *s, smf_event_t *e)
                 ogs_warn("Session has already been removed");
                 break;
             }
+            if (sess) ogs_otel_span_activate(sess->establishment_span);
             ogs_fsm_dispatch(&sess->sm, e);
             break;
         case SMF_TIMER_PFCP_NO_DELETION_RESPONSE:

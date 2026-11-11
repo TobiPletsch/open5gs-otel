@@ -29,6 +29,7 @@
 #include "amf-sm.h"
 #include "timer.h"
 #include "metrics.h"
+#include "ogs-otel.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -735,6 +736,9 @@ struct amf_ue_s {
         ogs_timer_t     *timer;
         uint32_t        retry_count;;
     } t3513, t3522, t3550, t3555, t3560, t3570, mobile_reachable, implicit_deregistration;
+
+    /* OpenTelemetry: open "amf.registration" span (see otel.h) */
+    ogs_otel_span_t *registration_span;
 
     /* UE Radio Capability */
     OCTET_STRING_t  ueRadioCapability;

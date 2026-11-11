@@ -36,6 +36,7 @@
 #include "ngap-path.h"
 #include "fd-path.h"
 #include "local-path.h"
+#include "otel.h"
 
 static uint8_t gtp_cause_from_diameter(uint8_t gtp_version,
         const uint32_t dia_err, const uint32_t *dia_exp_err)
@@ -1029,6 +1030,8 @@ void smf_gsm_state_wait_pfcp_establishment(ogs_fsm_t *s, smf_event_t *e)
                         ngap_build_pdu_session_resource_setup_request_transfer(
                                 sess);
                     ogs_assert(param.n2smbuf);
+                    smf_otel_establishment_event(sess, "pfcp_session_established");
+                    smf_otel_establishment_event(sess, "n1n2_accept_sent");
                     smf_namf_comm_send_n1_n2_message_transfer(
                             sess, NULL, &param);
                 }
@@ -2206,6 +2209,7 @@ void smf_gsm_state_operational(ogs_fsm_t *s, smf_event_t *e)
 
         switch (e->ngap.type) {
         case OpenAPI_n2_sm_info_type_PDU_RES_SETUP_RSP:
+            smf_otel_establishment_event(sess, "n2_setup_response_received");
             rv = ngap_handle_pdu_session_resource_setup_response_transfer(
                     sess, stream, pkbuf);
             if (rv != OGS_OK) {
@@ -2216,6 +2220,8 @@ void smf_gsm_state_operational(ogs_fsm_t *s, smf_event_t *e)
             break;
 
         case OpenAPI_n2_sm_info_type_PDU_RES_SETUP_FAIL:
+            smf_otel_establishment_end(sess, OGS_OTEL_OUTCOME_FAILURE, 0, 0,
+                    "PDU Session Resource Setup failed at gNB");
             rv = ngap_handle_pdu_session_resource_setup_unsuccessful_transfer(
                     sess, stream, pkbuf);
             if (rv != OGS_OK) {
@@ -4062,6 +4068,9 @@ void smf_gsm_state_5gc_n1_n2_reject(ogs_fsm_t *s, smf_event_t *e)
 
     switch (e->h.id) {
     case OGS_FSM_ENTRY_SIG:
+        smf_otel_establishment_end(sess, OGS_OTEL_OUTCOME_FAILURE,
+                OGS_5GSM_CAUSE_NETWORK_FAILURE, 0,
+                "PDU Session Establishment Reject (N1N2 reject path)");
         /*
          * Tear down in order: SM Policy -> UDM SDM subscription -> Reject.
          * UECM registration is not done yet at this point.
@@ -4472,6 +4481,8 @@ void smf_gsm_state_exception(ogs_fsm_t *s, smf_event_t *e)
 
     switch (e->h.id) {
     case OGS_FSM_ENTRY_SIG:
+        smf_otel_establishment_end(sess, OGS_OTEL_OUTCOME_FAILURE, 0, 0,
+                "GSM exception state");
         ogs_error("[%s:%d] State machine exception", smf_ue->supi, sess->psi);
         SMF_SESS_CLEAR(sess);
         break;

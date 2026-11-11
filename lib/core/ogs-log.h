@@ -109,6 +109,15 @@ void ogs_log_printf(ogs_log_level_e level, int domain_id,
 void ogs_log_hexdump_func(ogs_log_level_e level, int domain_id,
     const unsigned char *data, size_t len);
 
+/*
+ * Trace context for log correlation (OpenTelemetry PoC).
+ *
+ * While set, every log line written by the calling thread carries
+ * " [trace_id=<32 hex> span_id=<16 hex>]" after the message.
+ * Pass NULL to clear. The context is thread-local.
+ */
+void ogs_log_set_trace_context(const char *trace_id, const char *span_id);
+
 #define ogs_assert(expr) \
     do { \
         if (ogs_likely(expr)) ; \
