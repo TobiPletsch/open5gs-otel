@@ -132,7 +132,9 @@ Step by step:
 What is **not** correlated:
 
 * AMF and SMF spans of the same UE are separate traces, because no context is
-  propagated over SBI. They can be matched by `5gs.ue.ref` and time.
+  propagated over SBI. They can be matched by `5gs.ue.ref` and time. The
+  proposal in [08](08-distributed-tracing-design.md) adds per-request spans
+  and a span link from the session trace to the registration trace.
 * Log lines written outside a per-UE/per-session dispatch carry no trace ID.
   Examples are NGAP/gNB-level lines before the UE is identified, NRF heartbeats,
   and deregistration.

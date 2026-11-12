@@ -5,7 +5,7 @@
 | Limitation | Why / impact |
 |---|---|
 | Only two procedures are traced | By design (minimal PoC). Deregistration, service request, handover and PDU session release have no spans. |
-| AMF and SMF spans are separate traces | No W3C `traceparent` propagation over SBI. Join them via `5gs.ue.ref` and time. |
+| AMF and SMF spans are separate traces | No W3C `traceparent` propagation over SBI. Join them via `5gs.ue.ref` and time. Proposal: [08](08-distributed-tracing-design.md). |
 | Metrics ↔ traces only by time | prometheus-client-c supports no exemplars |
 | Log correlation only while a span is current | Lines outside the per-UE/per-session dispatch carry no trace ID |
 | Log lines still contain SUPI/SUCI | Only span attributes are pseudonymised (`5gs.ue.ref`). Changing existing log statements was out of scope. |
@@ -56,8 +56,11 @@
 
 ## 6.5 Possible next steps
 
-* Propagate `traceparent` over SBI (AMF → SMF), so a registration and its PDU
-  session become one trace.
+* Per-request SBI/PFCP spans in AMF and SMF, plus `traceparent` propagation
+  AMF ↔ SMF. Registration and PDU session stay separate traces, linked by a
+  span link. Investigated and designed in
+  [08-distributed-tracing-design.md](08-distributed-tracing-design.md).
+* Later: the same for AUSF, UDM, PCF, UPF, reusing the API from 08.
 * Use OTel logs (OTLP) instead of text markers. Structured attributes would
   also allow removing SUPIs from the log body.
 * Exemplars, by moving the counters to an OTel metrics SDK.

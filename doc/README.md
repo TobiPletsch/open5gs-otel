@@ -1,5 +1,8 @@
 # Open5GS OpenTelemetry PoC – documentation
 
+New here? Read [07-registration-walkthrough.md](07-registration-walkthrough.md) first. It explains the
+5G procedures and what you see in a trace. Then continue with the topics below.
+
 This folder documents the proof of concept on branch `otel-poc` of
 `github.com/TobiPletsch/open5gs-otel`. The PoC adds manual OpenTelemetry tracing
 to two Open5GS procedures. It ships the result to ClickHouse and shows it in
@@ -21,6 +24,8 @@ Grafana next to the existing Prometheus metrics and the NF logs.
 | [04-ue-registration.md](04-ue-registration.md) | Triggering UE registration, deregistration and PDU sessions with UERANSIM |
 | [05-grafana-dashboard.md](05-grafana-dashboard.md) | Dashboard structure, every panel's query, and how logs and traces are linked |
 | [06-limitations-and-troubleshooting.md](06-limitations-and-troubleshooting.md) | Known limitations, findings, and fixes for the problems hit so far |
+| [07-registration-walkthrough.md](07-registration-walkthrough.md) | Registration and PDU session step by step, how to read a trace, and what the PoC covers per step |
+| [08-distributed-tracing-design.md](08-distributed-tracing-design.md) | **Proposal (not implemented):** per-request SBI/PFCP spans in AMF/SMF, separate registration and session traces linked by reference |
 
 ## Architecture at a glance
 

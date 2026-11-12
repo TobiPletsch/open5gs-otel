@@ -1,5 +1,8 @@
 # 4. Triggering UE registration, deregistration and PDU sessions
 
+What the registration and the PDU session consist of is explained in
+[07-registration-walkthrough.md](07-registration-walkthrough.md).
+
 The UEs are simulated by UERANSIM in the pod
 `deploy/ueransim-ueransim-gnb-ues`, namespace `open5gs-ns`. The pod runs
 `nr-ue -n 10`, i.e. 10 UEs `imsi-999700000000001` … `imsi-999700000000010`.

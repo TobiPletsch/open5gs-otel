@@ -52,7 +52,9 @@ log lines of the next event.
 
 Spans are always **root spans** (`SpanKind INTERNAL`, scope `open5gs`). The AMF
 and SMF spans of the same UE are separate traces. Propagating context over SBI
-(`traceparent` header) was deliberately left out of scope.
+(`traceparent` header) was deliberately left out of scope. How it could be
+added for AMF and SMF, with separate but linked traces, is designed in
+[08-distributed-tracing-design.md](08-distributed-tracing-design.md).
 
 ## 1.3 New library `lib/otel`
 
@@ -219,6 +221,9 @@ sent: in the non-roaming case it is sent from `smf_sbi_send_sm_context_created_d
 | `build-image.sh` | Compile + install + image build (+ optional import into containerd) |
 | `README.md` | Short version of this documentation |
 | `grafana/gen_dashboard.py` | Generates the Grafana dashboard JSON (see [05](05-grafana-dashboard.md)) |
+
+Which step of the registration and session each hook corresponds to is shown
+in [07-registration-walkthrough.md](07-registration-walkthrough.md).
 
 Build and deployment are covered in [02-build.md](02-build.md) and
 [03-deployment.md](03-deployment.md).
