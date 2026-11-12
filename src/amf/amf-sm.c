@@ -27,6 +27,7 @@
 #include "nsmf-handler.h"
 #include "nnssf-handler.h"
 #include "nas-security.h"
+#include "otel.h"
 #include "gmm-handler.h"
 
 void amf_state_initial(ogs_fsm_t *s, amf_event_t *e)
@@ -106,6 +107,10 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
             ogs_error("STREAM has already been removed [%d]", stream_id);
             break;
         }
+
+        /* OpenTelemetry: trace context of the caller, cleared after the event */
+        ogs_otel_set_incoming_traceparent(ogs_sbi_header_get(
+                sbi_request->http.headers, OGS_OTEL_TRACEPARENT_HEADER));
 
         /*
          * Special handling for NAMF_OAM custom API
@@ -198,8 +203,14 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
                 CASE(OGS_SBI_RESOURCE_NAME_N1_N2_MESSAGES)
                     SWITCH(sbi_message.h.method)
                     CASE(OGS_SBI_HTTP_METHOD_POST)
+                    {
+                        ogs_otel_span_t *server_span = amf_otel_server_start(
+                            "POST namf-comm/ue-contexts/{id}/n1-n2-messages");
+                        ogs_otel_span_activate(server_span);
                         rv = amf_namf_comm_handle_n1_n2_message_transfer(
                                 stream, &sbi_message);
+                        amf_otel_server_end(server_span);
+                    }
                         if (rv != OGS_OK) {
                             ogs_assert(true ==
                                 ogs_sbi_server_send_error(stream,
@@ -446,6 +457,7 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
             ogs_assert(sbi_object_id >= OGS_MIN_POOL_ID &&
                     sbi_object_id <= OGS_MAX_POOL_ID);
 
+            ogs_sbi_xact_otel_status(sbi_xact, sbi_message.res_status);
             ogs_sbi_xact_remove(sbi_xact);
 
             amf_ue = amf_ue_find_by_id(sbi_object_id);
@@ -493,6 +505,7 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
                     target_ue_id = ctx->target_ue_id;
             }
 
+            ogs_sbi_xact_otel_status(sbi_xact, sbi_message.res_status);
             ogs_sbi_xact_remove(sbi_xact);
 
             sess = amf_sess_find_by_id(sbi_object_id);
@@ -543,6 +556,8 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
 
             if (ran_ue_id >= OGS_MIN_POOL_ID && ran_ue_id <= OGS_MAX_POOL_ID)
                 ran_ue = ran_ue_find_by_id(ran_ue_id);
+
+            ogs_otel_span_activate(sess->establishment_span);
 
             SWITCH(sbi_message.h.resource.component[2])
             CASE(OGS_SBI_RESOURCE_NAME_MODIFY)
@@ -595,6 +610,11 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
                      */
                     ogs_error("[%s:%d] create_sm_context failed() [%d]",
                             amf_ue->supi, sess->psi, sbi_message.res_status);
+                    amf_otel_session_end(sess, OGS_OTEL_OUTCOME_FAILURE,
+                            sbi_message.res_status !=
+                                OGS_SBI_HTTP_STATUS_CREATED ?
+                                    sbi_message.res_status : 0,
+                            "Create SM Context failed");
                     AMF_SESS_CLEAR(sess);
                 }
             END
@@ -627,6 +647,7 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
 
             state = sbi_xact->state;
 
+            ogs_sbi_xact_otel_status(sbi_xact, sbi_message.res_status);
             ogs_sbi_xact_remove(sbi_xact);
 
             sess = amf_sess_find_by_id(sbi_object_id);

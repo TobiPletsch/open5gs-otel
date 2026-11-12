@@ -163,6 +163,9 @@ uint8_t smf_5gc_n4_handle_session_establishment_response(
 
     ogs_debug("Session Establishment Response [5gc]");
 
+    smf_otel_pfcp_end(sess, xact, rsp->cause.presence ?
+            rsp->cause.u8 : OGS_PFCP_CAUSE_MANDATORY_IE_MISSING);
+
     ogs_pfcp_xact_commit(xact);
 
     if (rsp->up_f_seid.presence == 0) {
@@ -276,6 +279,10 @@ void smf_5gc_n4_handle_session_modification_response(
     flags = xact->modify_flags;
     ogs_assert(flags);
     trigger = xact->delete_trigger;
+
+    if (sess)
+        smf_otel_pfcp_end(sess, xact, rsp->cause.presence ?
+                rsp->cause.u8 : OGS_PFCP_CAUSE_MANDATORY_IE_MISSING);
 
     /* The delayed indirect tunnel REMOVE, if this is it, is done */
     if (sess && sess->handover.indirect_remove_xact_id == xact->id)

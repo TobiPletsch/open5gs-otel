@@ -70,6 +70,31 @@ void ogs_otel_final(void);
 /* Starts a new root span (SpanKind INTERNAL); NULL if tracing disabled */
 ogs_otel_span_t *ogs_otel_span_start(const char *name);
 
+typedef enum {
+    OGS_OTEL_KIND_INTERNAL = 0,
+    OGS_OTEL_KIND_SERVER,
+    OGS_OTEL_KIND_CLIENT,
+} ogs_otel_kind_e;
+
+/*
+ * Starts a span with explicit kind and relations. The parent is, in this
+ * order: the local span `parent`, else the remote parent in the W3C
+ * `traceparent` string ("00-<32 hex>-<16 hex>-<2 hex>"), else none (root).
+ * link_trace_id/link_span_id (lower-case hex) add a span link, e.g. from a
+ * PDU session trace to the registration trace. NULL if tracing disabled.
+ */
+ogs_otel_span_t *ogs_otel_span_start_ex(const char *name,
+        ogs_otel_kind_e kind, ogs_otel_span_t *parent,
+        const char *traceparent,
+        const char *link_trace_id, const char *link_span_id);
+
+/* W3C traceparent of the span ("00-<trace>-<span>-01"), or NULL */
+#define OGS_OTEL_TRACEPARENT_LEN 56
+char *ogs_otel_span_traceparent(ogs_otel_span_t *span, char *buf);
+
+/* HTTP header name used for propagation */
+#define OGS_OTEL_TRACEPARENT_HEADER "traceparent"
+
 void ogs_otel_span_set_str(ogs_otel_span_t *span,
         const char *key, const char *value);
 void ogs_otel_span_set_int(ogs_otel_span_t *span,
@@ -89,6 +114,14 @@ const char *ogs_otel_span_span_id(ogs_otel_span_t *span);
  * ogs_log lines carry its trace_id/span_id. NULL clears the context.
  */
 void ogs_otel_span_activate(ogs_otel_span_t *span);
+
+/*
+ * W3C traceparent of the SBI request currently being processed by this
+ * thread (set when an SBI server event is dispatched, NULL afterwards).
+ * The string is owned by the request; it is only valid during the event.
+ */
+void ogs_otel_set_incoming_traceparent(const char *traceparent);
+const char *ogs_otel_incoming_traceparent(void);
 
 /*
  * Pseudonymous, non-reversible UE reference for span attributes:

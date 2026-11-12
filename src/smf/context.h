@@ -570,6 +570,11 @@ typedef struct smf_sess_s {
 
     /* OpenTelemetry: open "smf.pdu_session.establishment" span (otel.h) */
     ogs_otel_span_t *establishment_span;
+    /* SERVER span of the activating Update SM Context (modify) */
+    ogs_otel_span_t *update_span;
+    /* CLIENT span of the outstanding PFCP request and its transaction */
+    ogs_otel_span_t *pfcp_span;
+    ogs_pool_id_t pfcp_span_xact_id;
 
     /* PDN Address Allocation (PAA) */
     ogs_paa_t paa;

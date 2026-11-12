@@ -44,8 +44,13 @@ void smf_otel_establishment_start(smf_sess_t *sess)
     ogs_otel_span_finish(&sess->establishment_span,
             OGS_OTEL_OUTCOME_SUPERSEDED, "new SM context create");
 
-    sess->establishment_span =
-        ogs_otel_span_start("smf.pdu_session.establishment");
+    /*
+     * SERVER span, child of the AMF's Create SM Context CLIENT span when
+     * the request carried a traceparent; otherwise a root span as before.
+     */
+    sess->establishment_span = ogs_otel_span_start_ex(
+            "smf.pdu_session.establishment", OGS_OTEL_KIND_SERVER,
+            NULL, ogs_otel_incoming_traceparent(), NULL, NULL);
     if (!sess->establishment_span)
         return;
 
@@ -87,6 +92,21 @@ void smf_otel_establishment_end(smf_sess_t *sess, const char *outcome,
     span = sess->establishment_span;
     if (!span)
         return;
+
+    /* The modify request is answered when the establishment ends */
+    if (sess->update_span) {
+        ogs_otel_span_t *update_span = sess->update_span;
+        sess->update_span = NULL;
+        ogs_otel_span_end(update_span,
+                strcmp(outcome, OGS_OTEL_OUTCOME_SUCCESS) ?
+                    OGS_OTEL_STATUS_ERROR : OGS_OTEL_STATUS_UNSET,
+                description);
+    }
+    if (sess->pfcp_span) {
+        ogs_otel_span_t *pfcp_span = sess->pfcp_span;
+        sess->pfcp_span = NULL;
+        ogs_otel_span_end(pfcp_span, OGS_OTEL_STATUS_ERROR, "procedure ended");
+    }
 
     /* Session attributes are only complete at the end of the procedure */
     ogs_otel_span_set_int(span, "5gs.pdu_session.id", sess->psi);
@@ -131,4 +151,99 @@ void smf_otel_establishment_end(smf_sess_t *sess, const char *outcome,
     }
 
     ogs_otel_span_finish(&sess->establishment_span, outcome, description);
+}
+
+void smf_otel_update_start(smf_sess_t *sess)
+{
+    ogs_assert(sess);
+
+    if (!sess->establishment_span || sess->update_span)
+        return;
+
+    sess->update_span = ogs_otel_span_start_ex(
+            "POST nsmf-pdusession/sm-contexts/{id}/modify",
+            OGS_OTEL_KIND_SERVER, NULL, ogs_otel_incoming_traceparent(),
+            NULL, NULL);
+    if (sess->update_span)
+        ogs_otel_span_set_str(sess->update_span, OGS_OTEL_ATTR_NF, "SMF");
+}
+
+void smf_otel_pfcp_start(smf_sess_t *sess,
+        ogs_pfcp_xact_t *xact, const char *name)
+{
+    ogs_otel_span_t *parent = NULL;
+
+    ogs_assert(sess);
+    ogs_assert(xact);
+    ogs_assert(name);
+
+    if (!sess->establishment_span)
+        return;
+
+    if (sess->pfcp_span) {
+        ogs_otel_span_t *old = sess->pfcp_span;
+        sess->pfcp_span = NULL;
+        ogs_otel_span_end(old, OGS_OTEL_STATUS_ERROR, "superseded");
+    }
+
+    parent = sess->update_span ? sess->update_span : sess->establishment_span;
+    sess->pfcp_span = ogs_otel_span_start_ex(
+            name, OGS_OTEL_KIND_CLIENT, parent, NULL, NULL, NULL);
+    if (!sess->pfcp_span)
+        return;
+
+    sess->pfcp_span_xact_id = xact->id;
+    ogs_otel_span_set_str(sess->pfcp_span, "5gs.pfcp.message", name);
+    ogs_otel_span_set_int(sess->pfcp_span, "5gs.pfcp.xid", xact->xid);
+}
+
+void smf_otel_pfcp_end(smf_sess_t *sess, ogs_pfcp_xact_t *xact, uint8_t cause)
+{
+    ogs_otel_span_t *span = NULL;
+    char desc[48];
+
+    ogs_assert(sess);
+    ogs_assert(xact);
+
+    if (!sess->pfcp_span || sess->pfcp_span_xact_id != xact->id)
+        return;
+
+    span = sess->pfcp_span;
+    sess->pfcp_span = NULL;
+
+    if (cause == OGS_PFCP_CAUSE_REQUEST_ACCEPTED) {
+        ogs_otel_span_set_int(span, "5gs.pfcp.cause", cause);
+        ogs_otel_span_end(span, OGS_OTEL_STATUS_UNSET, NULL);
+    } else if (cause) {
+        ogs_otel_span_set_int(span, "5gs.pfcp.cause", cause);
+        ogs_snprintf(desc, sizeof(desc), "PFCP cause %d", cause);
+        ogs_otel_span_set_str(span, "error.type", "pfcp_rejected");
+        ogs_otel_span_end(span, OGS_OTEL_STATUS_ERROR, desc);
+    } else {
+        ogs_otel_span_set_str(span, "error.type", "no_response");
+        ogs_otel_span_end(span, OGS_OTEL_STATUS_ERROR, "no PFCP response");
+    }
+}
+
+void smf_otel_pfcp_retransmit(smf_sess_t *sess,
+        ogs_pfcp_xact_t *xact, int retransmission)
+{
+    char name[48];
+
+    ogs_assert(sess);
+    ogs_assert(xact);
+
+    if (!sess->pfcp_span || sess->pfcp_span_xact_id != xact->id)
+        return;
+
+    ogs_snprintf(name, sizeof(name), "pfcp_retransmission_%d", retransmission);
+    ogs_otel_span_add_event(sess->pfcp_span, name);
+    ogs_otel_span_set_int(sess->pfcp_span,
+            "5gs.pfcp.retransmissions", retransmission);
+}
+
+ogs_otel_span_t *smf_otel_sbi_parent(smf_sess_t *sess)
+{
+    ogs_assert(sess);
+    return sess->update_span ? sess->update_span : sess->establishment_span;
 }

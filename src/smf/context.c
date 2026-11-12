@@ -2072,6 +2072,17 @@ void smf_sess_remove(smf_sess_t *sess)
 
     smf_otel_establishment_end(sess, OGS_OTEL_OUTCOME_ABORTED, 0, 0,
             "session removed");
+    /* Spans that outlived the establishment (no-ops if none) */
+    if (sess->update_span) {
+        ogs_otel_span_end(sess->update_span, OGS_OTEL_STATUS_ERROR,
+                "session removed");
+        sess->update_span = NULL;
+    }
+    if (sess->pfcp_span) {
+        ogs_otel_span_end(sess->pfcp_span, OGS_OTEL_STATUS_ERROR,
+                "session removed");
+        sess->pfcp_span = NULL;
+    }
     smf_ue = smf_ue_find_by_id(sess->smf_ue_id);
     ogs_assert(smf_ue);
 

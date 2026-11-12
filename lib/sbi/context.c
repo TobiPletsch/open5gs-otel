@@ -18,6 +18,7 @@
  */
 
 #include "ogs-sbi.h"
+#include "ogs-otel.h"
 
 int __ogs_sbi_domain;
 static ogs_sbi_context_t self;
@@ -2736,6 +2737,29 @@ void ogs_sbi_xact_remove(ogs_sbi_xact_t *xact)
 
     ogs_assert(xact);
 
+    if (xact->otel_span) {
+        if (xact->otel_status) {
+            char desc[32];
+
+            ogs_otel_span_set_int(xact->otel_span,
+                    "http.response.status_code", xact->otel_status);
+            if (xact->otel_status >= 400) {
+                ogs_snprintf(desc, sizeof(desc), "HTTP %d", xact->otel_status);
+                ogs_otel_span_set_str(xact->otel_span,
+                        "error.type", desc + 5);
+                ogs_otel_span_end(xact->otel_span, OGS_OTEL_STATUS_ERROR, desc);
+            } else {
+                ogs_otel_span_end(xact->otel_span, OGS_OTEL_STATUS_UNSET, NULL);
+            }
+        } else {
+            /* Removed without a response: timeout or local failure */
+            ogs_otel_span_set_str(xact->otel_span, "error.type", "no_response");
+            ogs_otel_span_end(xact->otel_span,
+                    OGS_OTEL_STATUS_ERROR, "no response");
+        }
+        xact->otel_span = NULL;
+    }
+
     sbi_object = xact->sbi_object;
     ogs_assert(sbi_object);
 
@@ -2778,6 +2802,85 @@ void ogs_sbi_xact_remove_all(ogs_sbi_object_t *sbi_object)
 ogs_sbi_xact_t *ogs_sbi_xact_find_by_id(ogs_pool_id_t id)
 {
     return ogs_pool_find_by_id(&xact_pool, id);
+}
+
+/* IDs in resource paths (SUPI, context refs, UUIDs) -> "{id}" */
+static bool otel_component_is_id(const char *c)
+{
+    size_t i, len;
+    bool digits = true, hexdash = true;
+
+    if (!strncmp(c, "imsi-", 5) || !strncmp(c, "suci-", 5) ||
+        !strncmp(c, "nai-", 4) || !strncmp(c, "imei-", 5) ||
+        !strncmp(c, "msisdn-", 7))
+        return true;
+
+    len = strlen(c);
+    for (i = 0; i < len; i++) {
+        if (!isdigit((unsigned char)c[i])) digits = false;
+        if (!isxdigit((unsigned char)c[i]) && c[i] != '-') hexdash = false;
+    }
+    return (len && digits) || (len >= 32 && hexdash);
+}
+
+void ogs_sbi_xact_otel_start(ogs_sbi_xact_t *xact, ogs_otel_span_t *parent)
+{
+    ogs_sbi_request_t *request = NULL;
+    char name[256], path[200];
+    char traceparent[OGS_OTEL_TRACEPARENT_LEN];
+    char *p = path, *last = path + sizeof(path);
+    OpenAPI_nf_type_e target_nf_type = OpenAPI_nf_type_NULL;
+    int i;
+
+    ogs_assert(xact);
+
+    if (!parent || xact->otel_span)
+        return;
+    request = xact->request;
+    if (!request || !request->h.method)
+        return;
+
+    path[0] = '\0';
+    if (request->h.service.name) {
+        p = ogs_slprintf(p, last, "%s", request->h.service.name);
+        for (i = 0; i < OGS_SBI_MAX_NUM_OF_RESOURCE_COMPONENT &&
+                    request->h.resource.component[i]; i++) {
+            const char *c = request->h.resource.component[i];
+            p = ogs_slprintf(p, last, "/%s",
+                    otel_component_is_id(c) ? "{id}" : c);
+        }
+    } else if (request->h.uri) {
+        p = ogs_slprintf(p, last, "%s", request->h.uri);
+    }
+
+    ogs_snprintf(name, sizeof(name), "%s %s", request->h.method, path);
+
+    xact->otel_span = ogs_otel_span_start_ex(
+            name, OGS_OTEL_KIND_CLIENT, parent, NULL, NULL, NULL);
+    if (!xact->otel_span)
+        return;
+
+    ogs_otel_span_set_str(xact->otel_span,
+            "http.request.method", request->h.method);
+    ogs_otel_span_set_str(xact->otel_span, "url.template", path);
+    if (request->h.service.name)
+        ogs_otel_span_set_str(xact->otel_span,
+                "5gs.sbi.service", request->h.service.name);
+    if (xact->service_name)
+        target_nf_type = ogs_sbi_service_name_to_nf_type(xact->service_name);
+    if (target_nf_type)
+        ogs_otel_span_set_str(xact->otel_span, "5gs.sbi.target_nf",
+                OpenAPI_nf_type_ToString(target_nf_type));
+
+    if (ogs_otel_span_traceparent(xact->otel_span, traceparent))
+        ogs_sbi_header_set(request->http.headers,
+                OGS_OTEL_TRACEPARENT_HEADER, traceparent);
+}
+
+void ogs_sbi_xact_otel_status(ogs_sbi_xact_t *xact, int status)
+{
+    ogs_assert(xact);
+    xact->otel_status = status;
 }
 
 ogs_sbi_subscription_spec_t *ogs_sbi_subscription_spec_add(

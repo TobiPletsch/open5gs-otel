@@ -38,6 +38,16 @@ ogs_otel_span_t *ogs_otel_span_start(const char *name)
     return NULL;
 }
 
+ogs_otel_span_t *ogs_otel_span_start_ex(const char *name,
+        ogs_otel_kind_e kind, ogs_otel_span_t *parent,
+        const char *traceparent,
+        const char *link_trace_id, const char *link_span_id)
+{
+    (void)name; (void)kind; (void)parent; (void)traceparent;
+    (void)link_trace_id; (void)link_span_id;
+    return NULL;
+}
+
 void ogs_otel_span_set_str(ogs_otel_span_t *span,
         const char *key, const char *value)
 {

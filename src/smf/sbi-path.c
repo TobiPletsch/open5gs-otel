@@ -222,6 +222,9 @@ int smf_sbi_discover_and_send(
                 xact->assoc_stream_id <= OGS_MAX_POOL_ID);
     }
 
+    /* OpenTelemetry: CLIENT span while the establishment is traced */
+    ogs_sbi_xact_otel_start(xact, smf_otel_sbi_parent(sess));
+
     r = ogs_sbi_discover_and_send(xact);
     if (r != OGS_OK) {
         ogs_error("smf_sbi_discover_and_send() failed");
@@ -294,6 +297,8 @@ ogs_sbi_xact_t *smf_namf_comm_create_n1_n2_message_xact(
     }
 
     xact->state = param->state;
+
+    ogs_sbi_xact_otel_start(xact, smf_otel_sbi_parent(sess));
 
     if (stream) {
         xact->assoc_stream_id = ogs_sbi_id_from_stream(stream);

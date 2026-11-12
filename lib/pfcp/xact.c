@@ -42,6 +42,9 @@ static ogs_pfcp_xact_stage_t ogs_pfcp_xact_get_stage(
 static int ogs_pfcp_xact_update_rx(ogs_pfcp_xact_t *xact, uint8_t type);
 
 static void response_timeout(void *data);
+
+void (*ogs_pfcp_xact_retransmit_hook)(
+        ogs_pfcp_xact_t *xact, int retransmission) = NULL;
 static void holding_timeout(void *data);
 static void delayed_commit_timeout(void *data);
 
@@ -638,6 +641,12 @@ static void response_timeout(void *data)
         ogs_assert(pkbuf);
 
         ogs_expect(OGS_OK == ogs_pfcp_sendto(xact->node, pkbuf));
+
+        if (ogs_pfcp_xact_retransmit_hook &&
+            xact->org == OGS_PFCP_LOCAL_ORIGINATOR)
+            ogs_pfcp_xact_retransmit_hook(xact,
+                ogs_local_conf()->time.message.pfcp.n1_response_rcount -
+                xact->response_rcount);
     } else {
         ogs_warn("[%d] %s No Reponse. Give up! "
                 "for step %d type %d peer %s",

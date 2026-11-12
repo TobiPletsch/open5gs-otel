@@ -19,6 +19,9 @@
 
 #include "sbi-path.h"
 #include "pfcp-path.h"
+#include "otel.h"
+
+static void otel_pfcp_retransmit(ogs_pfcp_xact_t *xact, int retransmission);
 
 /* Converts PFCP "Usage Report" "Report Trigger" bitmask to Gy "Reporting-Reason" AVP enum value.
  * PFCP: 3GPP TS 29.244 sec 8.2.41
@@ -223,6 +226,8 @@ int smf_pfcp_open(void)
     ogs_socknode_t *node = NULL;
     ogs_sock_t *sock = NULL;
 
+    ogs_pfcp_xact_retransmit_hook = otel_pfcp_retransmit;
+
     /* PFCP Server */
     ogs_list_for_each(&ogs_pfcp_self()->pfcp_list, node) {
         sock = ogs_pfcp_server(node);
@@ -258,6 +263,26 @@ void smf_pfcp_close(void)
 
     ogs_socknode_remove_all(&ogs_pfcp_self()->pfcp_list);
     ogs_socknode_remove_all(&ogs_pfcp_self()->pfcp_list6);
+}
+
+static void sess_5gc_timeout(ogs_pfcp_xact_t *xact, void *data);
+
+/* OpenTelemetry: retransmissions of session requests become span events */
+static void otel_pfcp_retransmit(ogs_pfcp_xact_t *xact, int retransmission)
+{
+    smf_sess_t *sess = NULL;
+    ogs_pool_id_t sess_id;
+
+    if (xact->cb != sess_5gc_timeout)
+        return;
+
+    sess_id = OGS_POINTER_TO_UINT(xact->data);
+    if (sess_id < OGS_MIN_POOL_ID || sess_id > OGS_MAX_POOL_ID)
+        return;
+
+    sess = smf_sess_find_by_id(sess_id);
+    if (sess)
+        smf_otel_pfcp_retransmit(sess, xact, retransmission);
 }
 
 static void sess_5gc_timeout(ogs_pfcp_xact_t *xact, void *data)
@@ -298,6 +323,7 @@ static void sess_5gc_timeout(ogs_pfcp_xact_t *xact, void *data)
      * correlated with the trace too.
      */
     ogs_otel_span_activate(sess->establishment_span);
+    smf_otel_pfcp_end(sess, xact, 0);
 
     /* The delayed indirect tunnel REMOVE, if this is it, is gone */
     if (sess->handover.indirect_remove_xact_id == xact->id)
@@ -607,6 +633,8 @@ int smf_5gc_pfcp_send_session_establishment_request(
     xact->local_seid = sess->smf_n4_seid;
     xact->create_flags = flags;
 
+    smf_otel_pfcp_start(sess, xact, "PFCP Session Establishment");
+
     memset(&h, 0, sizeof(ogs_pfcp_header_t));
     h.type = OGS_PFCP_SESSION_ESTABLISHMENT_REQUEST_TYPE;
 
@@ -687,6 +715,8 @@ int smf_5gc_pfcp_send_all_pdr_modification_request(
     xact->local_seid = sess->smf_n4_seid;
     xact->modify_flags = flags | OGS_PFCP_MODIFY_SESSION;
     xact->delete_trigger = trigger;
+
+    smf_otel_pfcp_start(sess, xact, "PFCP Session Modification");
 
     /*
      * The delayed REMOVE of the indirect tunnel after handover completion.
@@ -849,6 +879,8 @@ int smf_epc_pfcp_send_session_establishment_request(
     xact->assoc_xact_id = gtp_xact_id;
     xact->local_seid = sess->smf_n4_seid;
     xact->create_flags = flags;
+
+    smf_otel_pfcp_start(sess, xact, "PFCP Session Establishment");
 
     memset(&h, 0, sizeof(ogs_pfcp_header_t));
     h.type = OGS_PFCP_SESSION_ESTABLISHMENT_REQUEST_TYPE;

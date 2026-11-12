@@ -23,6 +23,7 @@
 #include "nas-path.h"
 #include "ngap-path.h"
 #include "sbi-path.h"
+#include "otel.h"
 
 int amf_namf_comm_handle_n1_n2_message_transfer(
         ogs_sbi_stream_t *stream, ogs_sbi_message_t *recvmsg)
@@ -171,6 +172,7 @@ int amf_namf_comm_handle_n1_n2_message_transfer(
             ogs_error("[%s] No N2 SM Content", amf_ue->supi);
             return OGS_ERROR;
         }
+        amf_otel_session_event(sess, "n1n2_pdu_session_setup_received");
 
         if (n1buf) {
             gmmbuf = gmm_build_dl_nas_transport(sess,
@@ -491,6 +493,8 @@ int amf_namf_comm_handle_n1_n2_message_transfer(
 
         ogs_error("[%d:%d] PDU session establishment reject",
                 sess->psi, sess->pti);
+        amf_otel_session_end(sess, OGS_OTEL_OUTCOME_FAILURE, 0,
+                "PDU Session Establishment Reject from SMF");
 
         r = nas_5gs_send_gsm_reject(
                 ran_ue_find_by_id(sess->ran_ue_id), sess,

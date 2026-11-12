@@ -311,6 +311,14 @@ typedef struct ogs_sbi_xact_s {
     ogs_sbi_object_t *sbi_object;
     ogs_pool_id_t sbi_object_id;
 
+    /*
+     * OpenTelemetry PoC: CLIENT span of this request (see lib/otel).
+     * Started by ogs_sbi_xact_otel_start(), ended in ogs_sbi_xact_remove()
+     * with the status recorded by ogs_sbi_xact_otel_status().
+     */
+    struct ogs_otel_span_s *otel_span;
+    int otel_status;
+
 } ogs_sbi_xact_t;
 
 typedef struct ogs_sbi_nf_service_s {
@@ -664,6 +672,15 @@ ogs_sbi_xact_t *ogs_sbi_xact_add(
 void ogs_sbi_xact_remove(ogs_sbi_xact_t *xact);
 void ogs_sbi_xact_remove_all(ogs_sbi_object_t *sbi_object);
 ogs_sbi_xact_t *ogs_sbi_xact_find_by_id(ogs_pool_id_t id);
+
+/*
+ * OpenTelemetry PoC: start a CLIENT span for the xact's request as a child
+ * of `parent` (no-op if parent is NULL or tracing is off) and add the W3C
+ * traceparent header. Record the HTTP status before ogs_sbi_xact_remove().
+ */
+void ogs_sbi_xact_otel_start(
+        ogs_sbi_xact_t *xact, struct ogs_otel_span_s *parent);
+void ogs_sbi_xact_otel_status(ogs_sbi_xact_t *xact, int status);
 
 ogs_sbi_subscription_spec_t *ogs_sbi_subscription_spec_add(
         OpenAPI_nf_type_e nf_type, const OpenAPI_service_name_e service_name);

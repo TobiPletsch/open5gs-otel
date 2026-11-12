@@ -133,6 +133,14 @@ typedef struct ogs_pfcp_xact_s {
     ogs_list_t      bearer_to_modify_list;
 } ogs_pfcp_xact_t;
 
+/*
+ * Optional hook, called each time a local request is retransmitted because
+ * no response arrived in time (OpenTelemetry PoC: span events in the SMF).
+ * retransmission is 1 for the first resend.
+ */
+extern void (*ogs_pfcp_xact_retransmit_hook)(
+        ogs_pfcp_xact_t *xact, int retransmission);
+
 int ogs_pfcp_xact_init(void);
 void ogs_pfcp_xact_final(void);
 

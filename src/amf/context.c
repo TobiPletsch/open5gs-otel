@@ -2661,6 +2661,9 @@ void amf_sess_remove(amf_sess_t *sess)
 
     ogs_assert(sess);
 
+    amf_otel_session_end(sess, OGS_OTEL_OUTCOME_ABORTED, 0,
+            "session removed");
+
     amf_ue = amf_ue_find_by_id(sess->amf_ue_id);
     if (amf_ue)
         ogs_list_remove(&amf_ue->sess_list, sess);

@@ -22,6 +22,7 @@
 #include "ngap-path.h"
 #include "nnrf-handler.h"
 #include "n5geir-build.h"
+#include "otel.h"
 
 int amf_sbi_open(void)
 {
@@ -145,6 +146,9 @@ int amf_ue_sbi_discover_and_send(
 
     xact->state = state;
 
+    /* OpenTelemetry: CLIENT span under the registration span (if open) */
+    ogs_sbi_xact_otel_start(xact, amf_ue->registration_span);
+
     rv = ogs_sbi_discover_and_send(xact);
     if (rv != OGS_OK) {
         ogs_error("amf_ue_sbi_discover_and_send() failed");
@@ -176,6 +180,8 @@ int amf_ue_sbi_discover_and_send_eir(amf_ue_t *amf_ue)
         ogs_error("[%s] Cannot create 5G-EIR transaction", amf_ue->supi);
         return OGS_ERROR;
     }
+
+    ogs_sbi_xact_otel_start(xact, amf_ue->registration_span);
 
     rv = ogs_sbi_discover_and_send(xact);
     if (rv != OGS_OK) {
@@ -264,6 +270,20 @@ int amf_sess_sbi_discover_and_send(
     }
 
     xact->state = state;
+
+    /*
+     * OpenTelemetry: CLIENT span under the PDU session span, or under the
+     * registration span for session requests made during a registration.
+     */
+    {
+        ogs_otel_span_t *parent = sess->establishment_span;
+        if (!parent) {
+            amf_ue_t *amf_ue = amf_ue_find_by_id(sess->amf_ue_id);
+            if (amf_ue)
+                parent = amf_ue->registration_span;
+        }
+        ogs_sbi_xact_otel_start(xact, parent);
+    }
 
     rv = ogs_sbi_discover_and_send(xact);
     if (rv != OGS_OK) {

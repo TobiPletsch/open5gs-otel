@@ -26,6 +26,31 @@
 #define DEFAULT_UE_REF_SALT "open5gs-otel-poc"
 
 static __thread ogs_otel_span_t *active_span;
+static __thread const char *incoming_traceparent;
+
+void ogs_otel_set_incoming_traceparent(const char *traceparent)
+{
+    incoming_traceparent = traceparent;
+}
+
+const char *ogs_otel_incoming_traceparent(void)
+{
+    return incoming_traceparent;
+}
+
+char *ogs_otel_span_traceparent(ogs_otel_span_t *span, char *buf)
+{
+    const char *trace_id = ogs_otel_span_trace_id(span);
+    const char *span_id = ogs_otel_span_span_id(span);
+
+    ogs_assert(buf);
+
+    if (!trace_id || !span_id)
+        return NULL;
+
+    ogs_snprintf(buf, OGS_OTEL_TRACEPARENT_LEN, "00-%s-%s-01", trace_id, span_id);
+    return buf;
+}
 
 void ogs_otel_span_activate(ogs_otel_span_t *span)
 {

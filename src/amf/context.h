@@ -739,6 +739,9 @@ struct amf_ue_s {
 
     /* OpenTelemetry: open "amf.registration" span (see otel.h) */
     ogs_otel_span_t *registration_span;
+    /* IDs of the last registration span, kept after it ended (span link) */
+    char last_registration_trace_id[33];
+    char last_registration_span_id[17];
 
     /* UE Radio Capability */
     OCTET_STRING_t  ueRadioCapability;
@@ -806,6 +809,9 @@ struct amf_ue_s {
 typedef struct amf_sess_s {
     ogs_sbi_object_t sbi;
     ogs_pool_id_t id;
+
+    /* OpenTelemetry: open "amf.pdu_session.establishment" span (otel.h) */
+    ogs_otel_span_t *establishment_span;
 
     uint8_t psi;            /* PDU Session Identity */
     uint8_t pti;            /* Procedure Trasaction Identity */

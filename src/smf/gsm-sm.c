@@ -2210,6 +2210,7 @@ void smf_gsm_state_operational(ogs_fsm_t *s, smf_event_t *e)
 
         switch (e->ngap.type) {
         case OpenAPI_n2_sm_info_type_PDU_RES_SETUP_RSP:
+            smf_otel_update_start(sess);
             smf_otel_establishment_event(sess, "n2_setup_response_received");
             rv = ngap_handle_pdu_session_resource_setup_response_transfer(
                     sess, stream, pkbuf);

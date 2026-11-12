@@ -493,6 +493,10 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
             break;
         }
 
+        /* OpenTelemetry: trace context of the caller, cleared after the event */
+        ogs_otel_set_incoming_traceparent(ogs_sbi_header_get(
+                sbi_request->http.headers, OGS_OTEL_TRACEPARENT_HEADER));
+
         rv = ogs_sbi_parse_request(&sbi_message, sbi_request);
         if (rv != OGS_OK) {
             /* 'sbi_message' buffer is released in ogs_sbi_parse_request() */
@@ -978,6 +982,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
 
             e->h.sbi.state = sbi_xact->state;
 
+            ogs_sbi_xact_otel_status(sbi_xact, sbi_message.res_status);
             ogs_sbi_xact_remove(sbi_xact);
 
             sess = smf_sess_find_by_id(sbi_object_id);
@@ -1021,6 +1026,7 @@ void smf_state_operational(ogs_fsm_t *s, smf_event_t *e)
             state = sbi_xact->state;
             ogs_assert(state);
 
+            ogs_sbi_xact_otel_status(sbi_xact, sbi_message.res_status);
             ogs_sbi_xact_remove(sbi_xact);
 
             sess = smf_sess_find_by_id(sbi_object_id);

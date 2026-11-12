@@ -145,6 +145,7 @@ static void amf_main(void *data)
 
             /* A UE's trace context never leaks into the next event */
             ogs_otel_span_activate(NULL);
+            ogs_otel_set_incoming_traceparent(NULL);
         }
     }
 done:

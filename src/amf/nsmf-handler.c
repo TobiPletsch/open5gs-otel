@@ -23,6 +23,7 @@
 #include "sbi-path.h"
 
 #include "gmm-build.h"
+#include "otel.h"
 
 int amf_nsmf_pdusession_handle_create_sm_context(
         amf_ue_t *amf_ue, ran_ue_t *ran_ue, amf_sess_t *sess,
@@ -303,6 +304,18 @@ int amf_nsmf_pdusession_handle_update_sm_context(
         ogs_error("[%s:%d] Stale user plane deactivation failed [%d]",
                 amf_ue->supi, sess->psi, recvmsg->res_status);
         return OGS_ERROR;
+    }
+
+    /* OpenTelemetry: the activating Update SM Context ends the procedure */
+    if (state == AMF_UPDATE_SM_CONTEXT_ACTIVATED) {
+        if (recvmsg->res_status == OGS_SBI_HTTP_STATUS_NO_CONTENT ||
+            recvmsg->res_status == OGS_SBI_HTTP_STATUS_OK) {
+            amf_otel_session_event(sess, "sm_context_activated");
+            amf_otel_session_end(sess, OGS_OTEL_OUTCOME_SUCCESS, 0, NULL);
+        } else {
+            amf_otel_session_end(sess, OGS_OTEL_OUTCOME_FAILURE,
+                    recvmsg->res_status, "Update SM Context failed");
+        }
     }
 
     if (recvmsg->res_status == OGS_SBI_HTTP_STATUS_NO_CONTENT ||

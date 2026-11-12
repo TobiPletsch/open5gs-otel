@@ -24,6 +24,7 @@
 #include "sbi-path.h"
 
 #include "gmm-handler.h"
+#include "otel.h"
 
 #undef OGS_LOG_DOMAIN
 #define OGS_LOG_DOMAIN __gmm_log_domain
@@ -1675,6 +1676,7 @@ int gmm_handle_ul_nas_transport(ran_ue_t *ran_ue, amf_ue_t *amf_ue,
                             param.slice_info_for_pdu_session.roaming_indication,
                             v_smf_instance,
                             h_smf_instance);
+                    amf_otel_session_start(amf_ue, sess);
                     r = amf_sess_sbi_discover_and_send(
                             OpenAPI_service_name_nsmf_pdusession,
                             v_discovery_option,

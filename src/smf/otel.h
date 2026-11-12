@@ -47,6 +47,26 @@ void smf_otel_establishment_set_int(smf_sess_t *sess,
 void smf_otel_establishment_end(smf_sess_t *sess, const char *outcome,
         int gsm_cause, int http_status, const char *description);
 
+/*
+ * SERVER span for the activating "POST sm-contexts/{ref}/modify" (child of
+ * the AMF's client span). Only while the establishment span is open; it
+ * ends together with the establishment span.
+ */
+void smf_otel_update_start(smf_sess_t *sess);
+
+/*
+ * CLIENT span per PFCP request sent during the establishment (child of the
+ * update span, else of the establishment span). cause 0 = no response.
+ */
+void smf_otel_pfcp_start(smf_sess_t *sess,
+        ogs_pfcp_xact_t *xact, const char *name);
+void smf_otel_pfcp_end(smf_sess_t *sess, ogs_pfcp_xact_t *xact, uint8_t cause);
+void smf_otel_pfcp_retransmit(smf_sess_t *sess,
+        ogs_pfcp_xact_t *xact, int retransmission);
+
+/* Parent for SBI CLIENT spans of this session (NULL: none) */
+ogs_otel_span_t *smf_otel_sbi_parent(smf_sess_t *sess);
+
 #ifdef __cplusplus
 }
 #endif
