@@ -1,0 +1,170 @@
+# 5. Grafana dashboard "Open5GS OTel PoC"
+
+## 5.1 Where it comes from
+
+The dashboard is **generated**, not hand-edited:
+
+```sh
+python3 docker/otel-poc/grafana/gen_dashboard.py open5gs-otel-poc.json [sql-test-dir]
+```
+
+* The output is a dashboard with uid `open5gs-otel-poc`, title
+  "Open5GS OTel PoC", default range **last 1 hour**, and refresh 30 s.
+* All panels use the ClickHouse datasource
+  (`grafana-clickhouse-datasource`, uid `ClickHouse` in the script).
+* With a second argument, the script also writes every panel query as plain SQL,
+  with the Grafana macros replaced, so the queries can be tested with
+  `clickhouse-client`.
+
+It is deployed twice:
+
+| Grafana | Folder | Datasource uid | File |
+|---|---|---|---|
+| pub-k8s (local) | "Open5GS OTel PoC" | `ClickHouse` | `dta9-workloads/observability/dashboards/open5gs-otel-poc.json` |
+| pub-nuc (public) | "Open5GS-Otel-PoC" | `ClickHouse-pub-k8s` (uid replaced) | `assurance-services/apps/observability/dashboards/open5gs-otel-poc.json` |
+
+To change the dashboard:
+
+1. Edit `gen_dashboard.py` and regenerate.
+2. For the NUC copy, replace `"uid": "ClickHouse"` with `"uid": "ClickHouse-pub-k8s"`.
+3. Commit the JSON to both repos. Grafana's file provisioning picks it up.
+
+Edits made in the UI are overwritten on the next provisioning.
+
+## 5.2 Layout
+
+```
++---------------------------------------------------------------------------+
+| About this dashboard (text)                                               |
++---------------- AMF - UE registration (amf.registration) -----------------+
+| Registration counters | Registration traces per | Registration outcomes    |
+| (Prometheus)          | interval (by outcome)   | (traces) table           |
+| Recent registration traces (click trace_id)                               |
++------- SMF - PDU session establishment (smf.pdu_session.establishment) ----+
+| PDU session counters  | PDU session traces per  | PDU session outcomes     |
+| (Prometheus)          | interval (by outcome)   | (traces) table           |
+| Establishment latency per milestone | Recent PDU session traces (click)   |
++---------------------- Selected trace (${trace_id}) -----------------------+
+| Trace (waterfall)                                                         |
+| Logs of the selected trace (AMF/SMF, matched by TraceId)                  |
++---------------------------------------------------------------------------+
+```
+
+The dashboard variable is `trace_id`, a textbox. It is set by clicking a
+`trace_id`, and you can also paste an ID into it.
+
+### Panels and their queries
+
+All trace queries filter on
+`ResourceAttributes['deployment.environment'] = 'open5gs-ns'`. All metric
+queries filter on `Attributes['namespace'] = 'open5gs-ns'`.
+
+| Panel | Source table | What it computes |
+|---|---|---|
+| **Registration / PDU session counters** | `otel_metrics_sum` | Per-interval increase of `fivegs_amffunction_rm_reginit{req,succ,fail}` and `fivegs_smffunction_sm_pdusessioncreation{req,succ,fail}`. Window function `v - lagInFrame(v)` per (metric, cause, `StartTimeUnix`). `StartTimeUnix` changes on an NF restart, which makes counter resets safe. Negative steps are clamped to 0. |
+| **… traces per interval (by outcome)** | `otel_traces` | `count()` per `$__timeInterval` and `5gs.outcome`, as bars, the same bucket size as the counters |
+| **… outcomes (traces)** | `otel_traces` | Count, p50/p95/max duration per outcome |
+| **Recent … traces (click trace_id)** | `otel_traces` | Last 100 spans with time, `trace_id`, outcome, registration type or DNN/session type, 5GMM/5GSM cause, status message, duration, `ue_ref`, and milestones (`Events.Name` joined with `>`) |
+| **Establishment latency per milestone** | `otel_traces` | For successful SMF spans: the time from the previous span event (or the span start) to each event, as avg/p95/max per step. Steps of about 2.5 s or 5 s reveal PFCP retransmissions between SMF and UPF. |
+| **Trace** | `otel_traces` | All spans `WHERE TraceId = '${trace_id}'`, mapped to Grafana's trace format: `tags` from `SpanAttributes`, `serviceTags` from `ResourceAttributes`, and span events as `logs` |
+| **Logs of the selected trace** | `otel_logs` | `WHERE $__timeFilter(Timestamp) AND TraceId = '${trace_id}' ORDER BY Timestamp` |
+
+## 5.3 How logs and traces are correlated
+
+This is the core of the PoC. The correlation is **exact, by ID**. It does not
+rely on time windows or on matching UE identifiers.
+
+```
+ AMF/SMF process                          collector                    ClickHouse                 Grafana
+ ─────────────────                        ─────────                    ──────────                 ───────
+ span = ogs_otel_span_start()  ──OTLP──▶  otel-agent ─▶ Kafka ─▶ gw ─▶ otel_traces.TraceId ◀─┐
+ ogs_otel_span_activate(span)                                                                  │  "Trace" panel
+   └▶ ogs_log_set_trace_context()                                                              │  WHERE TraceId = '${trace_id}'
+ ogs_info("...")                                                                               │
+   └▶ "... [trace_id=T span_id=S] (file:line)"                                                 │
+        stdout ─▶ /var/log/pods ─filelog─▶ transform/open5gs:                                  │
+                                           regex → log.trace_id/span_id ─▶ otel_logs.TraceId ◀─┤  "Logs" panel
+                                                                                               │  WHERE TraceId = '${trace_id}'
+                                                    click trace_id in a table ─▶ var-trace_id ─┘
+```
+
+Step by step:
+
+1. **In the NF.** When a procedure's span is current, the thread-local log
+   context holds its IDs. Every `ogs_log` line written during that event gets
+   ` [trace_id=<32 hex> span_id=<16 hex>]`. This includes lines from other
+   modules, such as `[sbi]` NF discovery and `[gmm]` messages. The span is made
+   current before each FSM dispatch that belongs to the UE or session, and
+   cleared after every event, so lines are never attributed to the wrong trace.
+2. **The final line.** `ogs_otel_span_finish()` always logs
+   `[otel] procedure finished [outcome:…]` with the IDs. Every trace therefore
+   has at least one correlated log line, including traces that ended through a
+   timer or a context removal.
+3. **In the collector.** The filelog receiver reads the container log. The
+   `transform/open5gs` processor extracts the marker and writes the IDs into
+   the OTel log record's **native `TraceId`/`SpanId` fields**. Severity is also
+   parsed from the Open5GS level.
+4. **In ClickHouse.** The ClickHouse exporter stores spans in
+   `otel_traces(TraceId, SpanId, …)` and logs in `otel_logs(TraceId, SpanId, …)`.
+   Both use the same 32-character lower-case hex encoding, so a simple equality
+   join works:
+
+   ```sql
+   SELECT l.Timestamp, l.Body
+   FROM otel_logs AS l
+   WHERE l.TraceId IN (SELECT TraceId FROM otel_traces
+                       WHERE SpanName = 'amf.registration'
+                         AND SpanAttributes['5gs.outcome'] = 'failure')
+   ORDER BY l.Timestamp;
+   ```
+5. **In Grafana.** In the "Recent … traces" tables, the `trace_id` column has a
+   data link:
+
+   ```
+   /d/open5gs-otel-poc/open5gs-otel-poc?${__url_time_range}&var-trace_id=${__value.raw}
+   ```
+
+   Clicking it reloads the dashboard with the same time range and
+   `trace_id` set. The **Trace** panel then shows the span with attributes and
+   milestone events. The **Logs** panel shows every AMF/SMF line with that
+   `TraceId`, in time order, with `container`, `traceID` and `spanID` columns.
+
+What is **not** correlated:
+
+* AMF and SMF spans of the same UE are separate traces, because no context is
+  propagated over SBI. They can be matched by `5gs.ue.ref` and time.
+* Log lines written outside a per-UE/per-session dispatch carry no trace ID.
+  Examples are NGAP/gNB-level lines before the UE is identified, NRF heartbeats,
+  and deregistration.
+
+## 5.4 How metrics and traces are correlated
+
+Only by **time** (temporal correlation). The counter panels and the
+"traces per interval" panels share the x-axis and the bucket size, so they can
+be compared side by side.
+
+There is no ID link because the Prometheus client in Open5GS
+(prometheus-client-c) cannot attach **exemplars** (a trace ID on a counter
+sample). Adding them would have meant replacing the metrics library, which is
+outside the PoC's "keep existing metrics" scope.
+
+Expected differences between the two:
+
+* The AMF fast path (Registration Accept without a new GUTI) is a successful
+  trace but does not increment `rm_reg*succ`.
+* `pdusessioncreationsucc` is incremented at the `201 Created` and **again**
+  after UDM registration on this code base, so it can exceed `…req`. The SMF
+  trace counts a session only once, when it is really up.
+
+## 5.5 Using it
+
+1. Select a time range that contains UE activity. Widen it ("Last 6 hours" /
+   "Last 24 hours") if the tables are empty, or trigger new procedures (see
+   [04](04-ue-registration.md)).
+   * ClickHouse keeps telemetry for **72 h** (exporter `ttl`). Older traces are gone.
+2. Look at the counters vs. trace bars for the same interval.
+3. Click a `trace_id` in "Recent registration traces" or "Recent PDU session
+   traces".
+4. Scroll to "Selected trace". The waterfall shows the span. Expand it for the
+   attributes (`5gs.*`) and events. The logs panel lists the related log lines.
+5. To start over, clear the "Trace ID" textbox at the top.

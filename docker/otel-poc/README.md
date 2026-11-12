@@ -1,5 +1,8 @@
 # Open5GS – manual OpenTelemetry instrumentation (PoC)
 
+Full documentation (code changes, build, deployment, UE triggers, dashboard
+and log/trace correlation): [`doc/`](../../doc/README.md).
+
 Two procedures are traced with manually created spans; logs written while a
 span is active carry its `trace_id`/`span_id`; the existing Prometheus metrics
 are unchanged.
