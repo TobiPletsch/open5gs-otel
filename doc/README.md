@@ -10,7 +10,7 @@ Grafana next to the existing Prometheus metrics and the NF logs.
 
 | Signal | What is produced | How it is correlated |
 |---|---|---|
-| Traces | `amf.registration` (AMF), `smf.pdu_session.establishment` (SMF) | – |
+| Traces | Registration trace: `amf.registration` + one span per SBI request of the AMF. PDU session trace: `amf.pdu_session.establishment` → `smf.pdu_session.establishment` + SBI and PFCP request spans | Registration ↔ session by **span link** |
 | Logs | Existing Open5GS log lines with ` [trace_id=… span_id=…]` appended while a span is active | **Directly** by `TraceId`, one click from a trace to its logs |
 | Metrics | Existing Prometheus counters (`fivegs_amffunction_rm_*`, `fivegs_smffunction_sm_*`), unchanged | **By time only**: same interval, side by side (no exemplars) |
 
@@ -25,7 +25,7 @@ Grafana next to the existing Prometheus metrics and the NF logs.
 | [05-grafana-dashboard.md](05-grafana-dashboard.md) | Dashboard structure, every panel's query, and how logs and traces are linked |
 | [06-limitations-and-troubleshooting.md](06-limitations-and-troubleshooting.md) | Known limitations, findings, and fixes for the problems hit so far |
 | [07-registration-walkthrough.md](07-registration-walkthrough.md) | Registration and PDU session step by step, how to read a trace, and what the PoC covers per step |
-| [08-distributed-tracing-design.md](08-distributed-tracing-design.md) | **Proposal (not implemented):** per-request SBI/PFCP spans in AMF/SMF, separate registration and session traces linked by reference |
+| [08-distributed-tracing.md](08-distributed-tracing.md) | Per-request SBI/PFCP spans in AMF/SMF, `traceparent` propagation AMF ↔ SMF, registration and session traces linked by span link (implemented, image `9f0813191`) |
 
 ## Architecture at a glance
 

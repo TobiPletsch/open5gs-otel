@@ -26,7 +26,7 @@ It is deployed twice:
 To change the dashboard:
 
 1. Edit `gen_dashboard.py` and regenerate.
-2. For the NUC copy, replace `"uid": "ClickHouse"` with `"uid": "ClickHouse-pub-k8s"`.
+2. For the NUC copy, generate a second file with `DS_UID=ClickHouse-pub-k8s`.
 3. Commit the JSON to both repos. Grafana's file provisioning picks it up.
 
 Edits made in the UI are overwritten on the next provisioning.
@@ -43,9 +43,12 @@ Edits made in the UI are overwritten on the next provisioning.
 +------- SMF - PDU session establishment (smf.pdu_session.establishment) ----+
 | PDU session counters  | PDU session traces per  | PDU session outcomes     |
 | (Prometheus)          | interval (by outcome)   | (traces) table           |
-| Establishment latency per milestone | Recent PDU session traces (click)   |
+| Establishment latency per milestone | Recent PDU session traces (click    |
+|                                     | trace_id or registration_trace)     |
++------- Requests of AMF and SMF (CLIENT spans: SBI and PFCP) --------------+
+| Request latency per peer (slowest p95 first)                              |
 +---------------------- Selected trace (${trace_id}) -----------------------+
-| Trace (waterfall)                                                         |
+| Trace (waterfall: procedure span + SBI/PFCP request spans, links)         |
 | Logs of the selected trace (AMF/SMF, matched by TraceId)                  |
 +---------------------------------------------------------------------------+
 ```
@@ -65,8 +68,10 @@ queries filter on `Attributes['namespace'] = 'open5gs-ns'`.
 | **… traces per interval (by outcome)** | `otel_traces` | `count()` per `$__timeInterval` and `5gs.outcome`, as bars, the same bucket size as the counters |
 | **… outcomes (traces)** | `otel_traces` | Count, p50/p95/max duration per outcome |
 | **Recent … traces (click trace_id)** | `otel_traces` | Last 100 spans with time, `trace_id`, outcome, registration type or DNN/session type, 5GMM/5GSM cause, status message, duration, `ue_ref`, and milestones (`Events.Name` joined with `>`) |
+| **Recent PDU session traces** | `otel_traces` | Root span `amf.pdu_session.establishment` joined with the SMF span of the same trace (5GSM cause, SMF milestones). `registration_trace` is the linked registration trace, clickable. |
+| **Request latency per peer** | `otel_traces` | CLIENT spans of AMF/SMF grouped by NF, request and target NF: count, p50/p95/max, errors, sum of PFCP retransmissions |
 | **Establishment latency per milestone** | `otel_traces` | For successful SMF spans: the time from the previous span event (or the span start) to each event, as avg/p95/max per step. Steps of about 2.5 s or 5 s reveal PFCP retransmissions between SMF and UPF. |
-| **Trace** | `otel_traces` | All spans `WHERE TraceId = '${trace_id}'`, mapped to Grafana's trace format: `tags` from `SpanAttributes`, `serviceTags` from `ResourceAttributes`, and span events as `logs` |
+| **Trace** | `otel_traces` | All spans `WHERE TraceId = '${trace_id}'`, mapped to Grafana's trace format: `tags` from `SpanAttributes`, `serviceTags` from `ResourceAttributes`, and span events as `logs`, span links as `references` (shown as "References" in the span details) |
 | **Logs of the selected trace** | `otel_logs` | `WHERE $__timeFilter(Timestamp) AND TraceId = '${trace_id}' ORDER BY Timestamp` |
 
 ## 5.3 How logs and traces are correlated
@@ -131,10 +136,11 @@ Step by step:
 
 What is **not** correlated:
 
-* AMF and SMF spans of the same UE are separate traces, because no context is
-  propagated over SBI. They can be matched by `5gs.ue.ref` and time. The
-  proposal in [08](08-distributed-tracing-design.md) adds per-request spans
-  and a span link from the session trace to the registration trace.
+* Registration and PDU session are **separate traces by design**. They are
+  connected by a span link: the `registration_trace` column and "References"
+  in the span details (see [08](08-distributed-tracing.md)).
+* Only AMF and SMF are instrumented. AUSF/UDM/PCF/UPF appear as the remote end
+  of request spans, and their logs carry no trace ID.
 * Log lines written outside a per-UE/per-session dispatch carry no trace ID.
   Examples are NGAP/gNB-level lines before the UE is identified, NRF heartbeats,
   and deregistration.

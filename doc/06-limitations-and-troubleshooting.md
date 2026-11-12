@@ -5,7 +5,8 @@
 | Limitation | Why / impact |
 |---|---|
 | Only two procedures are traced | By design (minimal PoC). Deregistration, service request, handover and PDU session release have no spans. |
-| AMF and SMF spans are separate traces | No W3C `traceparent` propagation over SBI. Join them via `5gs.ue.ref` and time. Proposal: [08](08-distributed-tracing-design.md). |
+| Only AMF and SMF are instrumented | Other NFs are the remote end of request spans; their internals and logs are not in the traces. See [08](08-distributed-tracing.md). |
+| Beyla duplicates SBI calls | Beyla still records every SBI request on port 7777 as parentless spans, in parallel to the AMF/SMF request spans |
 | Metrics ↔ traces only by time | prometheus-client-c supports no exemplars |
 | Log correlation only while a span is current | Lines outside the per-UE/per-session dispatch carry no trace ID |
 | Log lines still contain SUPI/SUCI | Only span attributes are pseudonymised (`5gs.ue.ref`). Changing existing log statements was out of scope. |
@@ -52,15 +53,16 @@
 | Pods `ErrImageNeverPulled` / `ImagePullBackOff` | The image tag is not imported on `k8s-worker3` (`sudo ctr -n k8s.io images ls \| grep open5gs-otel`), or the pod was scheduled on another node |
 | Registration Reject #90 or PDU Session Establishment Reject after a rollout | Stale NF state, run `scripts/restart-core.sh` |
 | Public Grafana: datasource "ClickHouse pub-k8s" fails | `kubectl -n observability get svc clickhouse-nodeport` on pub-k8s (NodePort 30901), and check that the user `grafana_nuc` exists: `SELECT name FROM system.users`. Check that Secret `clickhouse-pub-k8s-ro` is decrypted on the NUC (Flux `observability` Kustomization ready, `decryption` set). |
+| No new spans/logs in ClickHouse at all, `otel-gateway` in `CrashLoopBackOff` (OOMKilled) | Gateway memory too small for the Kafka backlog after a restart. Fixed with `memory_limiter` + 1Gi limit in `dta9-workloads/observability/otel.yaml`. Check: `kubectl -n observability get pods \| grep gateway`. |
+| Many short PDU session `failure` traces right after `restart-core.sh` | The old UEs retry their session every second while the core restarts. Expected, it stops once the UE pod is restarted. |
 | `git push` / large uploads from lab hosts stall after ~64 KB | The lab uplink's path MTU is 1460 while the hosts use 1500, and no ICMP "fragmentation needed" comes back (PMTUD black hole). Fix: MSS clamping on the lab router, or a lower MTU on the hosts. Push from a machine with MTU ≤ 1460 as a workaround. |
 
 ## 6.5 Possible next steps
 
-* Per-request SBI/PFCP spans in AMF and SMF, plus `traceparent` propagation
-  AMF ↔ SMF. Registration and PDU session stay separate traces, linked by a
-  span link. Investigated and designed in
-  [08-distributed-tracing-design.md](08-distributed-tracing-design.md).
-* Later: the same for AUSF, UDM, PCF, UPF, reusing the API from 08.
+* Done: per-request SBI/PFCP spans in AMF and SMF, `traceparent` AMF ↔ SMF,
+  linked registration/session traces ([08](08-distributed-tracing.md)).
+* Exclude AMF/SMF (or `open5gs-ns`) from Beyla to avoid duplicate SBI spans.
+* The same for AUSF, UDM, PCF, UPF, reusing the API from 08.
 * Use OTel logs (OTLP) instead of text markers. Structured attributes would
   also allow removing SUPIs from the log body.
 * Exemplars, by moving the counters to an OTel metrics SDK.

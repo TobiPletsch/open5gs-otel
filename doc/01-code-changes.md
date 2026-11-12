@@ -8,6 +8,8 @@ The branch is `otel-poc`. Its base is upstream commit `39a8c771f` (main, v2.8.0-
 | `cce324e9e` | SMF: record `sm_context_created` where the 201 is actually sent, add `pcf_sm_policy_created` |
 | `3b67ed0d0` | S-NSSAI SD as hex string, PoC README, Grafana dashboard generator |
 | `0bbfb0a95` | SMF: correlate PFCP transaction timeout logs with the session span |
+| `e0be16cb5`, `7e44b7c0c`, `9f0813191` | Per-request SBI/PFCP spans in AMF/SMF, `traceparent` propagation, linked PDU session traces (see [08](08-distributed-tracing.md)) |
+| `7445859e8` | Dashboard: linked session traces, request latency, span links in the trace view |
 
 Overall about 1,700 added lines in 38 files. More than half of that is new files:
 `lib/otel/`, `src/{amf,smf}/otel.[ch]` and `docker/otel-poc/`. The changes to
@@ -50,11 +52,14 @@ Before each per-UE or per-session FSM dispatch, that span is made *current*
 span is cleared. This keeps the trace context of one UE from ever leaking into
 log lines of the next event.
 
-Spans are always **root spans** (`SpanKind INTERNAL`, scope `open5gs`). The AMF
-and SMF spans of the same UE are separate traces. Propagating context over SBI
-(`traceparent` header) was deliberately left out of scope. How it could be
-added for AMF and SMF, with separate but linked traces, is designed in
-[08-distributed-tracing-design.md](08-distributed-tracing-design.md).
+In the first version (up to `0bbfb0a95`) both procedure spans were independent
+**root spans** (scope `open5gs`) without any context propagation. Since image
+`9f0813191` the procedure spans have CLIENT child spans per SBI/PFCP request,
+the SMF span is a child of the AMF's Create SM Context request (`traceparent`
+header), and the PDU session trace is linked to the registration trace. The
+mechanics are in the same "span on the context object" style and are described
+in [08-distributed-tracing.md](08-distributed-tracing.md). Sections 1.3–1.6
+describe the first version; 08 lists what changed on top of it.
 
 ## 1.3 New library `lib/otel`
 

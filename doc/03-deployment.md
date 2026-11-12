@@ -23,7 +23,7 @@ amf:
   image: &otel_image
     registry: docker.io
     repository: library/open5gs-otel
-    tag: "0bbfb0a95"            # = git short sha of the built commit
+    tag: "9f0813191"            # = git short sha of the built commit
     pullPolicy: IfNotPresent    # image exists only in k8s-worker3's containerd
   nodeSelector: &otel_node
     kubernetes.io/hostname: k8s-worker3
@@ -79,6 +79,7 @@ PoC-specific additions to `observability/otel.yaml`:
 | scrape jobs `open5gs-ns-amf` and `open5gs-ns-smf` (15 s), label `namespace: open5gs-ns` | Existing Prometheus counters of the PoC core. The dashboard filters on `Attributes['namespace']` |
 | `batch/metrics` (send_batch_size 250, max 500) in the agent's metrics pipeline | Bigger batches exceeded Kafka's 1 MB message limit. The endlessly retried batches filled the agent's memory, and `memory_limiter` then refused **all** signals |
 | agent memory 128Mi request / 512Mi limit | Headroom for the above |
+| gateway: `memory_limiter` in all pipelines, memory 256Mi request / 1Gi limit | After a restart the gateway consumed the whole Kafka backlog at once and was OOM-killed at 300Mi in a loop (2026-11-12), so nothing reached ClickHouse |
 
 ### `transform/open5gs`: from a log line to `TraceId`
 
@@ -120,7 +121,8 @@ its own for the PoC. It reads the **pub-k8s ClickHouse** over the lab network.
 | Dashboard, folder **"Open5GS-Otel-PoC"** (provider `open5gs-otel-poc`, ConfigMap `grafana-dashboard-open5gs-otel-poc` from a `configMapGenerator`) | `assurance-services/apps/observability/dashboards/open5gs-otel-poc.json` + `kustomization.yaml` |
 
 The NUC copy of the dashboard is the same generated JSON with the datasource uid
-`ClickHouse` replaced by `ClickHouse-pub-k8s`.
+`ClickHouse` replaced by `ClickHouse-pub-k8s` (generate it with
+`DS_UID=ClickHouse-pub-k8s python3 gen_dashboard.py <out.json>`).
 
 To change the password:
 
@@ -173,4 +175,7 @@ state. Order matters:
 | `4f000c96d` | First version |
 | `cce324e9e` | SMF span events fix |
 | `3b67ed0d0` | SD as hex |
-| `0bbfb0a95` | PFCP timeout log correlation (current) |
+| `0bbfb0a95` | PFCP timeout log correlation |
+| `e0be16cb5` | Per-request SBI/PFCP spans, linked session traces (first rollout) |
+| `7e44b7c0c` | Span names for URI-addressed requests, SMF modify span parent |
+| `9f0813191` | AMF server spans only with caller context (current) |

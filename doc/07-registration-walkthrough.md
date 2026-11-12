@@ -11,7 +11,7 @@ Legend for the "PoC today" column:
 | **event** | Span event (milestone) with a timestamp |
 | **log** | AMF/SMF log line carrying the `trace_id` (clickable from the trace) |
 | *within span* | Happens inside the span's duration, but there is no event of its own; the time is only visible as a gap between events |
-| – | Not visible in the PoC trace. It is in the plain logs, or in Beyla's unconnected HTTP spans (see [08](08-distributed-tracing-design.md)). |
+| – | Not visible in the PoC trace. It is in the plain logs, or in Beyla's unconnected HTTP spans (see [08](08-distributed-tracing.md)). |
 
 The UE and gNB are simulated by UERANSIM. Every SBI request in this
 deployment goes **through the SCP** (indirect communication): an "AMF → AUSF"
@@ -109,7 +109,7 @@ sequenceDiagram
 
 | # | Step | PoC today |
 |---|---|---|
-| 1–2 | PDU Session Establishment Request → AMF → SMF `sm-contexts` | AMF: – (no AMF span for sessions). SMF: **span** starts |
+| 1–2 | PDU Session Establishment Request → AMF → SMF `sm-contexts` | AMF: **span** `amf.pdu_session.establishment` starts (new trace, link to the registration); request span `POST nsmf-pdusession/sm-contexts`. SMF: **span** starts as its child |
 | 3 | SMF fetches session subscription (UDM SDM) | *within span*; **log** "Setup NF Instance [type:UDM]" |
 | 4 | 201 Created to the AMF | **event** `sm_context_created` (`pdusessioncreationsucc` is counted here) |
 | 5 | PCF SM policy | **event** `pcf_sm_policy_created`; **log** "UE SUPI[…] DNN[…] IPv4[…]" (IP allocated) |
@@ -147,19 +147,26 @@ smf.pdu_session.establishment  ████████████████�
 * **The logs panel** lists every AMF/SMF log line written while this span was
   current. That is mostly NF discovery and state messages, because Open5GS logs
   many protocol details only at DEBUG level.
-* **Registration and session are separate traces.** The session belongs to the
-  registration trace with the same `ue_ref`, a few milliseconds after it ended.
+* **Registration and session are separate traces.** The session trace carries a
+  span link to its registration trace (column `registration_trace` in the
+  dashboard).
+* Since image `9f0813191` the same session trace also contains one span per
+  SBI and PFCP request. The 5 s above then shows up as a "PFCP Session
+  Modification" span with two retransmission events. See
+  [08](08-distributed-tracing.md) for the full tree.
 
 ## 7.4 Coverage summary
 
 | Aspect | Covered today | Not covered (yet) |
 |---|---|---|
 | Procedures | Registration (AMF), PDU session establishment (SMF) | Deregistration, service request, handover, session release/modification by UE |
-| Granularity | One span per procedure + milestone events | Per-request spans (SBI calls, PFCP messages) |
-| NFs | AMF, SMF | AUSF, UDM, UDR, PCF, NRF, SCP, UPF (only indirectly: their latency is inside the AMF/SMF span) |
-| Cross-NF relation | Shared `ue_ref`, time | Trace context over SBI; links between registration and session |
+| Granularity | One span per procedure + milestone events + one span per SBI/PFCP request of AMF/SMF | Steps inside the other NFs |
+| NFs | AMF, SMF | AUSF, UDM, UDR, PCF, NRF, SCP, UPF (only as the remote end of AMF/SMF request spans) |
+| Cross-NF relation | `traceparent` AMF ↔ SMF; span link session → registration; shared `ue_ref` | Context into AUSF/UDM/PCF/UPF |
 | Logs | All AMF/SMF lines during per-UE/per-session processing | Lines outside that, other NFs, SUPI still in log text |
 | Metrics | Existing counters, compared by time | Exemplars |
 
-The next step for the "per-request spans" and "cross-NF relation" rows,
-limited to AMF and SMF, is designed in [08-distributed-tracing-design.md](08-distributed-tracing-design.md).
+Per-request spans and the AMF ↔ SMF relation are implemented as described in
+[08-distributed-tracing.md](08-distributed-tracing.md). In the tables above,
+every "*within span*" step that is an SBI request of AMF or SMF, or a PFCP
+request, now also has its own request span with a duration.
