@@ -222,6 +222,10 @@ ogs_otel_span_t *amf_otel_server_start(const char *name)
 
     ogs_assert(name);
 
+    /* Only requests from a traced caller: no orphan one-span traces */
+    if (!ogs_otel_incoming_traceparent())
+        return NULL;
+
     span = ogs_otel_span_start_ex(name, OGS_OTEL_KIND_SERVER,
             NULL, ogs_otel_incoming_traceparent(), NULL, NULL);
     if (span)
