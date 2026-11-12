@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Generates the Grafana dashboard "Open5GS OTel PoC" (ClickHouse datasource).
 
-  gen_dashboard.py <out.json> [<sql-test-dir>]
+  [DS_UID=<datasource uid>] gen_dashboard.py <out.json> [<sql-test-dir>]
+
+DS_UID defaults to "ClickHouse" (pub-k8s Grafana); the public NUC Grafana uses
+DS_UID=ClickHouse-pub-k8s.
 
 With a test dir, every panel query is also written there with the Grafana
 macros replaced by plain ClickHouse SQL, so it can be run with clickhouse-client.
@@ -11,7 +14,8 @@ import os
 import re
 import sys
 
-DS = {"type": "grafana-clickhouse-datasource", "uid": "ClickHouse"}
+DS = {"type": "grafana-clickhouse-datasource",
+      "uid": os.environ.get("DS_UID", "ClickHouse")}
 FORMAT = {"timeseries": 0, "table": 1, "logs": 2, "traces": 3}
 NS = "open5gs-ns"
 UID = "open5gs-otel-poc"
@@ -165,9 +169,56 @@ SELECT TraceId AS traceID,
        SpanKind AS kind,
        arrayMap((name, timestamp, attributes) -> tuple(name, toString(toUnixTimestamp64Milli(timestamp)),
                 arrayMap(key -> map('key', key, 'value', attributes[key]), mapKeys(attributes)))::Tuple(name String, timestamp String, fields Array(Map(String, String))),
-                Events.Name, Events.Timestamp, Events.Attributes) AS logs
+                Events.Name, Events.Timestamp, Events.Attributes) AS logs,
+       arrayMap((t, s) -> map('traceID', t, 'spanID', s), Links.TraceId, Links.SpanId) AS references
 FROM default.otel_traces
 WHERE TraceId = '${trace_id}'"""
+
+# PDU session traces: root span in the AMF (linked to the registration trace),
+# milestones from the SMF span of the same trace.
+RECENT_SESSIONS_SQL = f"""
+SELECT a.Timestamp AS time,
+       a.TraceId AS trace_id,
+       a.SpanAttributes['5gs.outcome'] AS outcome,
+       a.SpanAttributes['5gs.dnn'] AS dnn,
+       s.cause AS cause,
+       nullIf(a.StatusMessage, '') AS reason,
+       round(a.Duration / 1e6, 1) AS duration_ms,
+       a.SpanAttributes['5gs.ue.ref'] AS ue_ref,
+       a.SpanAttributes['5gs.registration.trace_id'] AS registration_trace,
+       s.milestones AS smf_milestones
+FROM default.otel_traces AS a
+LEFT JOIN (
+  SELECT TraceId,
+         SpanAttributes['5gs.5gsm.cause'] AS cause,
+         arrayStringConcat(Events.Name, ' > ') AS milestones
+  FROM default.otel_traces
+  WHERE $__timeFilter(Timestamp)
+    AND SpanName = 'smf.pdu_session.establishment') AS s ON s.TraceId = a.TraceId
+WHERE $__timeFilter(a.Timestamp)
+  AND a.SpanName = 'amf.pdu_session.establishment'
+  AND a.ResourceAttributes['deployment.environment'] = '{NS}'
+ORDER BY a.Timestamp DESC
+LIMIT 100"""
+
+# Per-request latency of the CLIENT spans (SBI requests and PFCP) of AMF/SMF.
+REQUEST_LATENCY_SQL = f"""
+SELECT replaceOne(ServiceName, 'open5gs-', '') AS nf,
+       SpanName AS request,
+       SpanAttributes['5gs.sbi.target_nf'] AS target,
+       count() AS n,
+       round(quantile(0.5)(Duration) / 1e6, 1) AS p50_ms,
+       round(quantile(0.95)(Duration) / 1e6, 1) AS p95_ms,
+       round(max(Duration) / 1e6, 1) AS max_ms,
+       countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
+       sum(toUInt32OrZero(SpanAttributes['5gs.pfcp.retransmissions'])) AS retransmissions
+FROM default.otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND SpanKind IN ('Client', 'SPAN_KIND_CLIENT')
+  AND ScopeName = 'open5gs'
+  AND ResourceAttributes['deployment.environment'] = '{NS}'
+GROUP BY nf, request, target
+ORDER BY p95_ms DESC"""
 
 LOGS_SQL = """
 SELECT Timestamp AS timestamp,
@@ -196,6 +247,10 @@ def trace_table_overrides():
                                     "failure": {"color": "red"},
                                     "aborted": {"color": "orange"},
                                     "superseded": {"color": "yellow"}}}]}]},
+                {"matcher": {"id": "byName", "options": "registration_trace"},
+                 "properties": [{"id": "links", "value": [
+                     {"title": "Show the linked registration trace",
+                      "url": TRACE_LINK}]}]},
                 {"matcher": {"id": "byName", "options": "duration_ms"},
                  "properties": [{"id": "unit", "value": "ms"}]}]}
 
@@ -214,8 +269,12 @@ text("About this dashboard", f"""
 * **Temporal correlation**: the bar charts put the existing Prometheus counters (scraped by the
   OTel gateway) next to the number of traces per interval, for the same time range.
   There is **no direct link** between a counter sample and a trace (no exemplars).
-* **Direct correlation**: click a `trace_id` in a table. The *Selected trace* row shows that
-  span and every AMF/SMF log line carrying the same `trace_id`.
+* **Direct correlation**: click a `trace_id` in a table. The *Selected trace* row shows the
+  trace (procedure span, SBI/PFCP request spans of AMF and SMF) and every AMF/SMF log line
+  carrying the same `trace_id`.
+* **Two traces per attach**: the registration (AMF) and the PDU session (AMF → SMF) are
+  separate traces. The session trace has a **span link** to the registration trace: column
+  `registration_trace`, or "References" in the span details.
 * `pdusessioncreationsucc` is counted at the `201 Created` (before PCF/PFCP) and again after UDM
   registration on this build, so it can exceed `pdusessioncreationreq`. The SMF trace only succeeds
   once the user plane is active.
@@ -265,16 +324,27 @@ panel("table", "Establishment latency per milestone (successful traces)",
       fieldConfig={"defaults": {"unit": "ms"}, "overrides": [
           {"matcher": {"id": "byName", "options": "n"},
            "properties": [{"id": "unit", "value": "short"}]}]})
-panel("table", "Recent PDU session traces (click trace_id)",
-      recent_traces("smf.pdu_session.establishment", "5gs.5gsm.cause",
-                    "SpanAttributes['5gs.dnn'] AS dnn, "
-                    "SpanAttributes['5gs.pdu_session.type'] AS session_type"),
-      "table", 10, y, 14, 8, fieldConfig=trace_table_overrides())
+panel("table", "Recent PDU session traces (click trace_id / registration_trace)",
+      RECENT_SESSIONS_SQL, "table", 10, y, 14, 8,
+      desc="Root span amf.pdu_session.establishment; registration_trace is the "
+           "linked registration trace (span link).",
+      fieldConfig=trace_table_overrides())
+y += 8
+
+row("Requests of AMF and SMF (CLIENT spans: SBI and PFCP)", y); y += 1
+panel("table", "Request latency per peer (slowest p95 first)",
+      REQUEST_LATENCY_SQL, "table", 0, y, 24, 8,
+      desc="Duration of each SBI request sent by AMF/SMF (via SCP, including the "
+           "remote NF) and of each PFCP request to the UPF. retransmissions = PFCP "
+           "requests that had to be resent (2.5 s each).",
+      fieldConfig={"defaults": {"custom": {"filterable": True}}, "overrides": [
+          {"matcher": {"id": "byRegexp", "options": ".*_ms"},
+           "properties": [{"id": "unit", "value": "ms"}]}]})
 y += 8
 
 row("Selected trace (${trace_id})", y); y += 1
-panel("traces", "Trace", TRACE_SQL, "traces", 0, y, 24, 9)
-y += 9
+panel("traces", "Trace", TRACE_SQL, "traces", 0, y, 24, 14)
+y += 14
 panel("logs", "Logs of the selected trace (AMF/SMF, matched by TraceId)",
       LOGS_SQL, "logs", 0, y, 24, 12,
       options={"showTime": True, "wrapLogMessage": True, "sortOrder": "Ascending",
