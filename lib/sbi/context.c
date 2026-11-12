@@ -2850,7 +2850,26 @@ void ogs_sbi_xact_otel_start(ogs_sbi_xact_t *xact, ogs_otel_span_t *parent)
                     otel_component_is_id(c) ? "{id}" : c);
         }
     } else if (request->h.uri) {
-        p = ogs_slprintf(p, last, "%s", request->h.uri);
+        /* "http://host:port/<service>/<version>/<resource...>" */
+        const char *s = strstr(request->h.uri, "://");
+        char *copy = NULL, *component = NULL, *saveptr = NULL;
+        int n = 0;
+
+        s = s ? strchr(s + 3, '/') : request->h.uri;
+        if (s) {
+            copy = ogs_strdup(s);
+            ogs_assert(copy);
+            for (component = strtok_r(copy, "/?", &saveptr); component;
+                    component = strtok_r(NULL, "/?", &saveptr), n++) {
+                if (n == 1 && component[0] == 'v' &&
+                        isdigit((unsigned char)component[1]))
+                    continue;           /* API version */
+                p = ogs_slprintf(p, last, "%s%s", n ? "/" : "",
+                        n && otel_component_is_id(component) ?
+                            "{id}" : component);
+            }
+            ogs_free(copy);
+        }
     }
 
     ogs_snprintf(name, sizeof(name), "%s %s", request->h.method, path);

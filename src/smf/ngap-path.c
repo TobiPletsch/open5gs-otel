@@ -18,6 +18,7 @@
  */
 
 #include "ngap-path.h"
+#include "otel.h"
 
 void ngap_send_to_n2sm(smf_sess_t *sess,
         ogs_sbi_stream_t *stream, int type, ogs_pkbuf_t *pkbuf)
@@ -27,6 +28,14 @@ void ngap_send_to_n2sm(smf_sess_t *sess,
 
     ogs_assert(sess);
     ogs_assert(pkbuf);
+
+    /*
+     * OpenTelemetry: the N2 part of "modify" is handled in a later event,
+     * so the SERVER span is started here, while the caller's traceparent
+     * of the HTTP request is still known.
+     */
+    if (type == OpenAPI_n2_sm_info_type_PDU_RES_SETUP_RSP)
+        smf_otel_update_start(sess);
 
     e = smf_event_new(SMF_EVT_NGAP_MESSAGE);
     ogs_assert(e);
