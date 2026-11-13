@@ -80,6 +80,7 @@ PoC-specific additions to `observability/otel.yaml`:
 | `batch/metrics` (send_batch_size 250, max 500) in the agent's metrics pipeline | Bigger batches exceeded Kafka's 1 MB message limit. The endlessly retried batches filled the agent's memory, and `memory_limiter` then refused **all** signals |
 | agent memory 128Mi request / 512Mi limit | Headroom for the above |
 | gateway: `memory_limiter` in all pipelines, memory 256Mi request / 1Gi limit | After a restart the gateway consumed the whole Kafka backlog at once and was OOM-killed at 300Mi in a loop (2026-11-12), so nothing reached ClickHouse |
+| ClickHouse memory 1Gi request / 4Gi limit (`observability/clickhouse.yaml`) | At 1500Mi ClickHouse was OOM-killed 26 times in 20 h (2026-11-13); dashboard queries failed with "Memory limit (total) exceeded" |
 
 ### `transform/open5gs`: from a log line to `TraceId`
 

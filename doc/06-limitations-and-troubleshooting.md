@@ -65,5 +65,5 @@
 * The same for AUSF, UDM, PCF, UPF, reusing the API from 08.
 * Use OTel logs (OTLP) instead of text markers. Structured attributes would
   also allow removing SUPIs from the log body.
-* Exemplars, by moving the counters to an OTel metrics SDK.
+* Exemplars (metric → trace): options and effort in [09-exemplars.md](09-exemplars.md).
 * Push the image to a registry and drop the `nodeSelector`.
