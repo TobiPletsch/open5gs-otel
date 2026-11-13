@@ -4,11 +4,16 @@
   [DS_UID=<datasource uid>] gen_dashboard_light.py <out.json>
 
 Traces and logs only:
-  * Trace overview: "Recent registration traces" and "Recent PDU session
-    traces" (same content as in the main dashboard), filterable by outcome.
-  * Clicking a trace_id (or a registration_trace) selects that trace: one
-    large trace panel and one logs panel show it and all AMF/SMF log lines
-    carrying the same trace_id.
+  * Three blocks side by side, per registration (amf.registration):
+    all attempts | successful (a PDU session was established, i.e. a linked
+    amf.pdu_session.establishment span ended with success) | failing.
+  * UE search (variable "ue" in the top bar): IMSI or ue_ref. Filters the
+    three blocks and lists all registration and PDU session traces of the UE.
+  * Clicking a trace selects it: one trace panel + its AMF/SMF logs.
+
+Traces only contain the pseudonym 5gs.ue.ref = first 16 hex of
+SHA-256(salt || SUPI). The search computes it from the IMSI in ClickHouse,
+so it only works with the salt the NFs use (UE_REF_SALT, default of the PoC).
 """
 import json
 import os
@@ -18,57 +23,90 @@ DS = {"type": "grafana-clickhouse-datasource",
       "uid": os.environ.get("DS_UID", "ClickHouse")}
 NS = "open5gs-ns"
 UID = "open5gs-otel-poc-light"
+UE_REF_SALT = os.environ.get("UE_REF_SALT", "open5gs-otel-poc")
 TRACE_LINK = ("/d/" + UID + "/otel-poc-trace-and-logs-light?${__url_time_range}"
-              "&var-outcome=${outcome}&var-trace_id=${__value.raw}")
+              "&var-ue=${ue}&var-trace_id=${__value.raw}")
 
-# '${outcome}' is 'all' or one of the outcome values
-OUTCOME_FILTER = "('${outcome}' = 'all' OR %s = '${outcome}')"
+UE = "${ue:sqlstring}"
+# Empty search = all UEs. Accepts "imsi-<digits>", "<digits>" or a ue_ref.
+UE_FILTER = (
+    f"({UE} = '' OR {{col}} IN (lower({UE}), lower(substring(hex(SHA256(concat("
+    f"'{UE_REF_SALT}', if(startsWith({UE}, 'imsi-'), {UE}, concat('imsi-', {UE}))))), 1, 16))))")
+ENV = f"ResourceAttributes['deployment.environment'] = '{NS}'"
 
-REGISTRATIONS_SQL = f"""
+# One row per registration, with the PDU sessions linked to it
+REG_BASE = f"""
+WITH sess AS (
+  SELECT SpanAttributes['5gs.registration.trace_id'] AS reg_trace,
+         count() AS sessions,
+         countIf(SpanAttributes['5gs.outcome'] = 'success') AS ok,
+         argMaxIf(TraceId, Timestamp, SpanAttributes['5gs.outcome'] = 'success') AS ok_session,
+         argMax(TraceId, Timestamp) AS last_session,
+         argMax(StatusMessage, Timestamp) AS last_reason
+  FROM default.otel_traces
+  WHERE $__timeFilter(Timestamp)
+    AND SpanName = 'amf.pdu_session.establishment'
+    AND {ENV}
+  GROUP BY reg_trace)
+SELECT r.Timestamp AS time,
+       r.TraceId AS trace_id,
+       r.SpanAttributes['5gs.ue.ref'] AS ue_ref,
+       r.SpanAttributes['5gs.outcome'] AS outcome,
+       r.StatusMessage AS reg_reason,
+       s.sessions AS sessions,
+       s.ok AS ok,
+       s.ok_session AS ok_session,
+       s.last_session AS last_session,
+       s.last_reason AS last_reason
+FROM default.otel_traces AS r
+LEFT JOIN sess AS s ON s.reg_trace = r.TraceId
+WHERE $__timeFilter(r.Timestamp)
+  AND r.SpanName = 'amf.registration'
+  AND r.{ENV}
+  AND {UE_FILTER.replace("{col}", "r.SpanAttributes['5gs.ue.ref']")}"""
+
+ATTEMPTS_SQL = f"""
+SELECT time, trace_id, ue_ref, outcome, sessions AS pdu_sessions
+FROM ({REG_BASE})
+ORDER BY time DESC
+LIMIT 500"""
+
+SUCCESS_SQL = f"""
+SELECT time, trace_id, ue_ref, ok_session AS session_trace
+FROM ({REG_BASE})
+WHERE outcome = 'success' AND ok > 0
+ORDER BY time DESC
+LIMIT 500"""
+
+FAILING_SQL = f"""
+SELECT time, trace_id, ue_ref,
+       multiIf(outcome != 'success', concat('registration ', outcome,
+                   if(reg_reason != '', concat(': ', reg_reason), '')),
+               sessions = 0, 'no PDU session attempt',
+               concat('PDU session failed: ', last_reason)) AS reason,
+       nullIf(last_session, '') AS session_trace
+FROM ({REG_BASE})
+WHERE NOT (outcome = 'success' AND ok > 0)
+ORDER BY time DESC
+LIMIT 500"""
+
+UE_TRACES_SQL = f"""
 SELECT Timestamp AS time,
+       if(SpanName = 'amf.registration', 'registration', 'PDU session') AS procedure,
        TraceId AS trace_id,
        SpanAttributes['5gs.outcome'] AS outcome,
-       SpanAttributes['5gs.registration.type'] AS type,
-       SpanAttributes['5gs.5gmm.cause'] AS cause,
        nullIf(StatusMessage, '') AS reason,
        round(Duration / 1e6, 1) AS duration_ms,
        SpanAttributes['5gs.ue.ref'] AS ue_ref,
+       nullIf(SpanAttributes['5gs.registration.trace_id'], '') AS registration_trace,
        arrayStringConcat(Events.Name, ' > ') AS milestones
 FROM default.otel_traces
 WHERE $__timeFilter(Timestamp)
-  AND SpanName = 'amf.registration'
-  AND ResourceAttributes['deployment.environment'] = '{NS}'
-  AND {OUTCOME_FILTER % "SpanAttributes['5gs.outcome']"}
+  AND SpanName IN ('amf.registration', 'amf.pdu_session.establishment')
+  AND {ENV}
+  AND {UE_FILTER.replace("{col}", "SpanAttributes['5gs.ue.ref']")}
 ORDER BY Timestamp DESC
-LIMIT 200"""
-
-SESSIONS_SQL = f"""
-SELECT a.Timestamp AS time,
-       a.TraceId AS trace_id,
-       a.SpanAttributes['5gs.outcome'] AS outcome,
-       s.smf_outcome AS smf_outcome,
-       a.SpanAttributes['5gs.dnn'] AS dnn,
-       s.cause AS cause,
-       nullIf(a.StatusMessage, '') AS reason,
-       round(a.Duration / 1e6, 1) AS duration_ms,
-       a.SpanAttributes['5gs.ue.ref'] AS ue_ref,
-       a.SpanAttributes['5gs.registration.trace_id'] AS registration_trace,
-       s.milestones AS smf_milestones
-FROM default.otel_traces AS a
-LEFT JOIN (
-  SELECT TraceId,
-         SpanAttributes['5gs.outcome'] AS smf_outcome,
-         SpanAttributes['5gs.5gsm.cause'] AS cause,
-         arrayStringConcat(Events.Name, ' > ') AS milestones
-  FROM default.otel_traces
-  WHERE $__timeFilter(Timestamp)
-    AND SpanName = 'smf.pdu_session.establishment') AS s ON s.TraceId = a.TraceId
-WHERE $__timeFilter(a.Timestamp)
-  AND a.SpanName = 'amf.pdu_session.establishment'
-  AND a.ResourceAttributes['deployment.environment'] = '{NS}'
-  AND {OUTCOME_FILTER % "a.SpanAttributes['5gs.outcome']"}
-ORDER BY a.Timestamp DESC
-LIMIT 200"""
+LIMIT 500"""
 
 TRACE_SQL = """
 SELECT TraceId AS traceID,
@@ -117,57 +155,69 @@ def target(sql, kind, fmt):
             "queryType": kind, "rawSql": sql.strip(), "refId": "A"}
 
 
-def table_overrides():
-    link = lambda title: [{"id": "links", "value": [{"title": title, "url": TRACE_LINK}]}]
+def link(title):
+    return [{"id": "links", "value": [{"title": title, "url": TRACE_LINK}]}]
+
+
+def table(title, sql, x, y, w, h, desc):
     color = [{"id": "custom.cellOptions", "value": {"type": "color-text"}},
              {"id": "mappings", "value": [{"type": "value", "options": {
                  "success": {"color": "green"}, "failure": {"color": "red"},
                  "aborted": {"color": "orange"}, "superseded": {"color": "yellow"}}}]}]
-    return {"defaults": {"custom": {"filterable": True}},
-            "overrides": [
-                {"matcher": {"id": "byName", "options": "trace_id"},
-                 "properties": link("Show this trace and its logs")},
-                {"matcher": {"id": "byName", "options": "registration_trace"},
-                 "properties": link("Show the linked registration trace")},
-                {"matcher": {"id": "byName", "options": "outcome"}, "properties": color},
-                {"matcher": {"id": "byName", "options": "smf_outcome"}, "properties": color},
-                {"matcher": {"id": "byName", "options": "duration_ms"},
-                 "properties": [{"id": "unit", "value": "ms"}]}]}
+    panels.append({
+        "id": nid(), "type": "table", "title": title, "description": desc,
+        "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
+        "targets": [target(sql, "table", 1)],
+        "fieldConfig": {"defaults": {"custom": {"filterable": True}}, "overrides": [
+            {"matcher": {"id": "byName", "options": "trace_id"},
+             "properties": link("Show this trace and its logs")},
+            {"matcher": {"id": "byName", "options": "session_trace"},
+             "properties": link("Show the PDU session trace")},
+            {"matcher": {"id": "byName", "options": "registration_trace"},
+             "properties": link("Show the linked registration trace")},
+            {"matcher": {"id": "byName", "options": "ue_ref"},
+             "properties": [{"id": "links", "value": [{
+                 "title": "Show all traces of this UE",
+                 "url": "/d/" + UID + "/otel-poc-trace-and-logs-light?${__url_time_range}"
+                        "&var-ue=${__value.raw}&var-trace_id=${trace_id}"}]}]},
+            {"matcher": {"id": "byName", "options": "outcome"}, "properties": color},
+            {"matcher": {"id": "byName", "options": "duration_ms"},
+             "properties": [{"id": "unit", "value": "ms"}]}]}})
 
 
 y = 0
 panels.append({"id": nid(), "type": "text", "title": "",
-               "gridPos": {"x": 0, "y": y, "w": 24, "h": 5},
+               "gridPos": {"x": 0, "y": y, "w": 24, "h": 4},
                "options": {"mode": "markdown", "content": """
-**Open5GS OTel PoC - traces and logs.** Click a `trace_id` in one of the tables: the
-*Selected trace* section below shows that trace and every AMF/SMF log line with the same `trace_id`.
-
-* **Registration traces**: one per UE registration, AMF only (`amf.registration`): authentication
-  (AUSF), UDM registration and subscription data, PCF access policy, Registration Accept/Complete.
-* **PDU session traces**: one per session attempt, AMF → SMF (`amf.pdu_session.establishment` with
-  `smf.pdu_session.establishment` as child): UDM session data, PCF session policy, PFCP to the UPF,
-  N1N2 to the gNB. `outcome` is the AMF view, `smf_outcome` what the SMF reported.
-  `registration_trace` jumps to the registration the session belongs to (span link).
+**Open5GS OTel PoC - traces and logs.** **UE search:** enter an IMSI (`999700000000001` or
+`imsi-999700000000001`) or a `ue_ref` in the **UE** field at the top (empty = all UEs), or click a
+`ue_ref` in any table. Click a `trace_id` / `session_trace` / `registration_trace` to show that trace
+and its AMF/SMF logs at the bottom. Traces store no IMSI, only the pseudonym `ue_ref`; the search
+computes it from the IMSI.
 """}})
-y += 5
+y += 4
 
-panels.append({"id": nid(), "type": "row", "title": "Trace overview (filter: outcome = ${outcome})",
+panels.append({"id": nid(), "type": "row", "title": "Registrations (UE: ${ue})",
                "collapsed": False, "gridPos": {"x": 0, "y": y, "w": 24, "h": 1}, "panels": []})
 y += 1
-panels.append({"id": nid(), "type": "table",
-               "title": "Recent registration traces (click trace_id)",
-               "description": "Root span amf.registration: one per Registration Request.",
-               "datasource": DS, "gridPos": {"x": 0, "y": y, "w": 24, "h": 9},
-               "targets": [target(REGISTRATIONS_SQL, "table", 1)],
-               "fieldConfig": table_overrides()})
-y += 9
-panels.append({"id": nid(), "type": "table",
-               "title": "Recent PDU session traces (click trace_id / registration_trace)",
-               "description": "Root span amf.pdu_session.establishment: one per Create SM "
-                              "Context; SMF columns from the SMF span of the same trace.",
-               "datasource": DS, "gridPos": {"x": 0, "y": y, "w": 24, "h": 10},
-               "targets": [target(SESSIONS_SQL, "table", 1)],
-               "fieldConfig": table_overrides()})
+table("Registration attempts", ATTEMPTS_SQL, 0, y, 8, 11,
+      "Every Registration Request (amf.registration), any outcome. pdu_sessions = "
+      "PDU session attempts linked to this registration.")
+table("Successful (PDU session established)", SUCCESS_SQL, 8, y, 8, 11,
+      "Registration succeeded and at least one linked PDU session ended with success "
+      "(SMF: user plane active, registered at the UDM). session_trace = that session.")
+table("Failing (no PDU session established)", FAILING_SQL, 16, y, 8, 11,
+      "Registration failed, or it succeeded but no linked PDU session succeeded. "
+      "session_trace = the last session attempt, if any.")
+y += 11
+
+panels.append({"id": nid(), "type": "row", "title": "Traces of UE: ${ue}",
+               "collapsed": False, "gridPos": {"x": 0, "y": y, "w": 24, "h": 1}, "panels": []})
+y += 1
+table("All registration and PDU session traces (filtered by the UE search, newest first)",
+      UE_TRACES_SQL, 0, y, 24, 10,
+      "Root spans of both procedures. Use the column filters (funnel icon) to filter "
+      "e.g. by procedure or outcome.")
 y += 10
 
 panels.append({"id": nid(), "type": "row", "title": "Selected trace (${trace_id})",
@@ -179,22 +229,21 @@ panels.append({"id": nid(), "type": "traces", "title": "Trace",
                "datasource": DS, "gridPos": {"x": 0, "y": y, "w": 24, "h": 20},
                "targets": [target(TRACE_SQL, "traces", 3)]})
 y += 20
-panels.append({"id": nid(), "type": "logs", "title": "Logs of the selected trace (AMF/SMF, matched by TraceId)",
+panels.append({"id": nid(), "type": "logs",
+               "title": "Logs of the selected trace (AMF/SMF, matched by TraceId)",
                "datasource": DS, "gridPos": {"x": 0, "y": y, "w": 24, "h": 18},
                "targets": [target(LOGS_SQL, "logs", 2)],
                "options": {"showTime": True, "wrapLogMessage": True,
                            "sortOrder": "Ascending", "enableLogDetails": True,
                            "dedupStrategy": "none"}})
 
-outcomes = ["all", "success", "failure", "aborted", "superseded"]
 variables = [
-    {"type": "custom", "name": "outcome", "label": "Outcome",
-     "query": ",".join(outcomes),
-     "current": {"text": "all", "value": "all"},
-     "options": [{"text": o, "value": o, "selected": o == "all"} for o in outcomes]},
+    {"type": "textbox", "name": "ue", "label": "UE (IMSI or ue_ref)", "query": "",
+     "current": {"text": "", "value": ""},
+     "description": "e.g. 999700000000001 or imsi-999700000000001 or a ue_ref; empty = all"},
     {"type": "textbox", "name": "trace_id", "label": "Trace ID", "query": "",
      "current": {"text": "", "value": ""},
-     "description": "Set by clicking a trace_id in one of the tables"},
+     "description": "Set by clicking a trace in one of the tables"},
 ]
 
 dashboard = {
