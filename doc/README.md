@@ -69,3 +69,25 @@ flowchart LR
 | Collector / ClickHouse / pub-k8s Grafana | GitLab `dta9-workloads`, folder `observability/` (Flux `wl-observability`) |
 | Public Grafana (NUC) | GitHub `assurance-services`, `apps/observability/` (Flux `observability` from `factory_infra`) |
 | Rollout helper | `scripts/restart-core.sh` in the deployment repo |
+
+### UERANSIM on/off (on `pub-k8s-cp`)
+
+```sh
+NS=open5gs-ns
+UE=deploy/ueransim-ueransim-gnb-ues
+GNB=deploy/ueransim-ueransim-gnb
+
+# switch off (Flux would not restore it while suspended)
+flux suspend helmrelease ueransim -n $NS
+kubectl -n $NS scale $UE $GNB --replicas=0
+
+# switch on: gNB first, then the UEs (they resolve the gNB IP once at start)
+flux resume helmrelease ueransim -n $NS
+kubectl -n $NS scale $GNB --replicas=1 && kubectl -n $NS rollout status $GNB
+sleep 10 && kubectl -n $NS scale $UE --replicas=1
+
+# new registrations + PDU sessions while running
+kubectl -n $NS rollout restart $UE
+```
+
+Details and checks: [04-ue-registration.md](04-ue-registration.md).

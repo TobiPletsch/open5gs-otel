@@ -20,6 +20,7 @@ All commands run on `pub-k8s-cp`, or anywhere with a kubeconfig for pub-k8s:
 ```sh
 NS=open5gs-ns
 UE=deploy/ueransim-ueransim-gnb-ues
+GNB=deploy/ueransim-ueransim-gnb
 ```
 
 ## 4.0 Is UERANSIM running at all?
@@ -32,13 +33,13 @@ every `logs | grep -c ...` prints `0`.
 kubectl -n $NS get deploy | grep ueransim     # 0/0 = switched off
 # switch on: gNB first, the UEs resolve its IP once at start
 flux resume helmrelease ueransim -n $NS
-kubectl -n $NS scale deploy/ueransim-ueransim-gnb --replicas=1
-kubectl -n $NS rollout status deploy/ueransim-ueransim-gnb
+kubectl -n $NS scale $GNB --replicas=1
+kubectl -n $NS rollout status $GNB
 sleep 10
-kubectl -n $NS scale deploy/ueransim-ueransim-gnb-ues --replicas=1
-# switch off again
+kubectl -n $NS scale $UE --replicas=1
+# switch off again (both deployments in one command)
 flux suspend helmrelease ueransim -n $NS
-kubectl -n $NS scale deploy/ueransim-ueransim-gnb-ues deploy/ueransim-ueransim-gnb --replicas=0
+kubectl -n $NS scale $UE $GNB --replicas=0
 ```
 
 ## 4.1 Inspecting the UEs (read-only)
