@@ -83,6 +83,9 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
 
     int service_name_id = OpenAPI_service_name_NULL;
 
+    /* OpenTelemetry: trace of the request an SMF response answers */
+    char otel_trace_id[33] = "";
+
     amf_sm_debug(e);
 
     ogs_assert(s);
@@ -505,6 +508,10 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
                     target_ue_id = ctx->target_ue_id;
             }
 
+            {
+                const char *t = ogs_otel_span_trace_id(sbi_xact->otel_span);
+                ogs_cpystrn(otel_trace_id, t ? t : "", sizeof(otel_trace_id));
+            }
             ogs_sbi_xact_otel_status(sbi_xact, sbi_message.res_status);
             ogs_sbi_xact_remove(sbi_xact);
 
@@ -557,7 +564,20 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
             if (ran_ue_id >= OGS_MIN_POOL_ID && ran_ue_id <= OGS_MAX_POOL_ID)
                 ran_ue = ran_ue_find_by_id(ran_ue_id);
 
-            ogs_otel_span_activate(sess->establishment_span);
+            /*
+             * OpenTelemetry: a response belongs to the current attempt only
+             * if its request span is in the same trace. A late answer to an
+             * earlier attempt with the same PDU session ID (e.g. 404 after
+             * the SMF released that context) must not end the new span.
+             */
+            {
+                const char *t =
+                    ogs_otel_span_trace_id(sess->establishment_span);
+                sess->otel_stale_response =
+                    t && strcmp(t, otel_trace_id) != 0;
+            }
+            if (!sess->otel_stale_response)
+                ogs_otel_span_activate(sess->establishment_span);
 
             SWITCH(sbi_message.h.resource.component[2])
             CASE(OGS_SBI_RESOURCE_NAME_MODIFY)
@@ -610,11 +630,12 @@ void amf_state_operational(ogs_fsm_t *s, amf_event_t *e)
                      */
                     ogs_error("[%s:%d] create_sm_context failed() [%d]",
                             amf_ue->supi, sess->psi, sbi_message.res_status);
-                    amf_otel_session_end(sess, OGS_OTEL_OUTCOME_FAILURE,
-                            sbi_message.res_status !=
-                                OGS_SBI_HTTP_STATUS_CREATED ?
-                                    sbi_message.res_status : 0,
-                            "Create SM Context failed");
+                    if (!sess->otel_stale_response)
+                        amf_otel_session_end(sess, OGS_OTEL_OUTCOME_FAILURE,
+                                sbi_message.res_status !=
+                                    OGS_SBI_HTTP_STATUS_CREATED ?
+                                        sbi_message.res_status : 0,
+                                "Create SM Context failed");
                     AMF_SESS_CLEAR(sess);
                 }
             END

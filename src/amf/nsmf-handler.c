@@ -306,8 +306,12 @@ int amf_nsmf_pdusession_handle_update_sm_context(
         return OGS_ERROR;
     }
 
-    /* OpenTelemetry: the activating Update SM Context ends the procedure */
-    if (state == AMF_UPDATE_SM_CONTEXT_ACTIVATED) {
+    /*
+     * OpenTelemetry: the activating Update SM Context ends the procedure,
+     * unless the response belongs to an earlier attempt (see amf-sm.c)
+     */
+    if (state == AMF_UPDATE_SM_CONTEXT_ACTIVATED &&
+        !sess->otel_stale_response) {
         if (recvmsg->res_status == OGS_SBI_HTTP_STATUS_NO_CONTENT ||
             recvmsg->res_status == OGS_SBI_HTTP_STATUS_OK) {
             amf_otel_session_event(sess, "sm_context_activated");

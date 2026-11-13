@@ -812,8 +812,14 @@ typedef struct amf_sess_s {
 
     /* OpenTelemetry: open "amf.pdu_session.establishment" span (otel.h) */
     ogs_otel_span_t *establishment_span;
+    /*
+     * Set per SMF response: true if the response belongs to a request of an
+     * earlier attempt on this PDU session ID (another trace). Such a late
+     * response must not end the current span.
+     */
+    bool otel_stale_response;
 
-    uint8_t psi;            /* PDU Session Identity */
+    uint8_t psi;           /* PDU Session Identity */
     uint8_t pti;            /* Procedure Trasaction Identity */
     uint8_t request_type;   /* Request type */
 

@@ -493,8 +493,10 @@ int amf_namf_comm_handle_n1_n2_message_transfer(
 
         ogs_error("[%d:%d] PDU session establishment reject",
                 sess->psi, sess->pti);
-        amf_otel_session_end(sess, OGS_OTEL_OUTCOME_FAILURE, 0,
-                "PDU Session Establishment Reject from SMF");
+        /* Only if the SMF's request belongs to the current attempt */
+        if (amf_otel_session_owns_request(sess))
+            amf_otel_session_end(sess, OGS_OTEL_OUTCOME_FAILURE, 0,
+                    "PDU Session Establishment Reject from SMF");
 
         r = nas_5gs_send_gsm_reject(
                 ran_ue_find_by_id(sess->ran_ue_id), sess,

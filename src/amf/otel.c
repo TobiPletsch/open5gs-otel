@@ -216,6 +216,21 @@ void amf_otel_session_end(amf_sess_t *sess,
     ogs_otel_span_finish(&sess->establishment_span, outcome, description);
 }
 
+bool amf_otel_session_owns_request(amf_sess_t *sess)
+{
+    const char *traceparent = ogs_otel_incoming_traceparent();
+    const char *trace_id = NULL;
+
+    ogs_assert(sess);
+
+    trace_id = ogs_otel_span_trace_id(sess->establishment_span);
+    if (!trace_id || !traceparent)
+        return true;
+
+    /* "00-<trace_id>-<span_id>-01" */
+    return strstr(traceparent, trace_id) != NULL;
+}
+
 ogs_otel_span_t *amf_otel_server_start(const char *name)
 {
     ogs_otel_span_t *span = NULL;

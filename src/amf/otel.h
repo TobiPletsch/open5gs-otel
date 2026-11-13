@@ -59,6 +59,12 @@ void amf_otel_session_event(amf_sess_t *sess, const char *name);
 /* http_status 0 = none. No-op without an open span */
 void amf_otel_session_end(amf_sess_t *sess,
         const char *outcome, int http_status, const char *description);
+/*
+ * true if the SBI request being processed belongs to the current session
+ * attempt: its traceparent is in the trace of sess->establishment_span (or
+ * it carries none, so it cannot be told apart)
+ */
+bool amf_otel_session_owns_request(amf_sess_t *sess);
 
 /*
  * SERVER span for an incoming SBI request (child of its traceparent, if
