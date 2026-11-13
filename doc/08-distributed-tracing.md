@@ -170,6 +170,16 @@ It is NULL in every NF except the SMF.
 * All 12 dashboard queries (including the trace panel with `references`) return
   data through the public NUC Grafana.
 
+### Fix 2026-11-13: responses of earlier attempts (image `5dd707a49`)
+
+The AMF session span lives on `amf_sess_t`, i.e. per PDU session ID. When a UE
+retried with the same PSI, a late answer to the previous attempt (HTTP 404 for an
+SM context the SMF had already released) ended the *new* span as `failure`.
+Now `amf-sm.c` compares the trace ID of the answered request span with the
+session span (`sess->otel_stale_response`); only responses from the same trace
+end the span. SMF-initiated N1N2 rejects end it only if their `traceparent` is
+in that trace (`amf_otel_session_owns_request()`).
+
 ## 8.6 Open points
 
 * **Beyla duplicates.** Beyla (`dta9-workloads/observability/beyla.yaml`)

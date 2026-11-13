@@ -23,7 +23,7 @@ amf:
   image: &otel_image
     registry: docker.io
     repository: library/open5gs-otel
-    tag: "9f0813191"            # = git short sha of the built commit
+    tag: "5dd707a49"            # = git short sha of the built commit
     pullPolicy: IfNotPresent    # image exists only in k8s-worker3's containerd
   nodeSelector: &otel_node
     kubernetes.io/hostname: k8s-worker3
@@ -179,4 +179,5 @@ state. Order matters:
 | `0bbfb0a95` | PFCP timeout log correlation |
 | `e0be16cb5` | Per-request SBI/PFCP spans, linked session traces (first rollout) |
 | `7e44b7c0c` | Span names for URI-addressed requests, SMF modify span parent |
-| `9f0813191` | AMF server spans only with caller context (current) |
+| `9f0813191` | AMF server spans only with caller context |
+| `5dd707a49` | AMF: late SMF responses of an earlier attempt no longer end the current session span (current) |
