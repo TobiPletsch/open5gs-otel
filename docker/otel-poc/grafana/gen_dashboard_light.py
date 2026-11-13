@@ -256,6 +256,21 @@ dashboard = {
     "refresh": "30s",
     "time": {"from": "now-6h", "to": "now"},
     "templating": {"list": variables},
+    # Shown in the top bar next to the variables: textbox variables have no
+    # clear ("X") button, so these links reload the dashboard with empty values
+    # (keepTime keeps the selected time range).
+    "links": [
+        {"type": "link", "title": "✕ Clear UE + trace", "icon": "dashboard",
+         "url": "/d/" + UID + "/otel-poc-trace-and-logs-light?var-ue=&var-trace_id=",
+         "keepTime": True, "includeVars": False, "targetBlank": False,
+         "tooltip": "Reset the UE search and the selected trace", "tags": [],
+         "asDropdown": False},
+        {"type": "link", "title": "✕ Clear trace", "icon": "dashboard",
+         "url": "/d/" + UID + "/otel-poc-trace-and-logs-light?var-ue=${ue}&var-trace_id=",
+         "keepTime": True, "includeVars": False, "targetBlank": False,
+         "tooltip": "Reset only the selected trace (keeps the UE search)", "tags": [],
+         "asDropdown": False},
+    ],
     "panels": panels,
 }
 
