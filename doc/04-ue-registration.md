@@ -22,6 +22,25 @@ NS=open5gs-ns
 UE=deploy/ueransim-ueransim-gnb-ues
 ```
 
+## 4.0 Is UERANSIM running at all?
+
+UERANSIM may be switched off between demos: HelmRelease `ueransim` suspended
+and both deployments scaled to 0. Then `rollout restart` starts nothing and
+every `logs | grep -c ...` prints `0`.
+
+```sh
+kubectl -n $NS get deploy | grep ueransim     # 0/0 = switched off
+# switch on: gNB first, the UEs resolve its IP once at start
+flux resume helmrelease ueransim -n $NS
+kubectl -n $NS scale deploy/ueransim-ueransim-gnb --replicas=1
+kubectl -n $NS rollout status deploy/ueransim-ueransim-gnb
+sleep 10
+kubectl -n $NS scale deploy/ueransim-ueransim-gnb-ues --replicas=1
+# switch off again
+flux suspend helmrelease ueransim -n $NS
+kubectl -n $NS scale deploy/ueransim-ueransim-gnb-ues deploy/ueransim-ueransim-gnb --replicas=0
+```
+
 ## 4.1 Inspecting the UEs (read-only)
 
 ```sh
