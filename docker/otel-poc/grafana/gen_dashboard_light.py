@@ -274,6 +274,8 @@ dashboard = {
     "panels": panels,
 }
 
-with open(sys.argv[1], "w") as f:
-    json.dump(dashboard, f, indent=2)
-print("panels:", len(panels))
+if __name__ == "__main__":
+    # importable: gen_dashboard_metrics.py reuses `dashboard`
+    with open(sys.argv[1], "w") as f:
+        json.dump(dashboard, f, indent=2)
+    print("panels:", len(panels))
