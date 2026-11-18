@@ -27,6 +27,7 @@ Grafana next to the existing Prometheus metrics and the NF logs.
 | [07-registration-walkthrough.md](07-registration-walkthrough.md) | Registration and PDU session step by step, how to read a trace, and what the PoC covers per step |
 | [08-distributed-tracing.md](08-distributed-tracing.md) | Per-request SBI/PFCP spans in AMF/SMF, `traceparent` propagation AMF ↔ SMF, registration and session traces linked by span link (implemented, image `9f0813191`) |
 | [09-exemplars.md](09-exemplars.md) | Investigation: metric ↔ trace correlation with exemplars, options and effort (not implemented) |
+| [10-metrics.md](10-metrics.md) | **Branch `otel-metrics`:** SMF PDU session metrics with the OTel metrics SDK, dashboard with exact metric → trace drill-down |
 
 ## Architecture at a glance
 
