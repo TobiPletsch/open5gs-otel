@@ -139,6 +139,33 @@ char *ogs_otel_ue_ref(const char *id, char *buf);
 void ogs_otel_span_finish(ogs_otel_span_t **span_ptr,
         const char *outcome, const char *description);
 
+/*
+ * Metrics (OTLP/HTTP, delta temporality, exported every
+ * OTEL_METRIC_EXPORT_INTERVAL ms, default 10000). Enabled together with
+ * tracing (same endpoint); create returns NULL and every call is a no-op
+ * otherwise. Create instruments once and keep them.
+ *
+ * Attribute values must have LOW cardinality (outcome, cause, DNN):
+ * never put SUPI/IMSI, trace IDs or other per-request values into them.
+ */
+typedef struct ogs_otel_counter_s ogs_otel_counter_t;
+typedef struct ogs_otel_histogram_s ogs_otel_histogram_t;
+
+typedef struct ogs_otel_attr_s {
+    const char *key;
+    const char *value;          /* NULL: attribute skipped */
+} ogs_otel_attr_t;
+
+ogs_otel_counter_t *ogs_otel_counter_create(const char *name,
+        const char *description, const char *unit);
+void ogs_otel_counter_add(ogs_otel_counter_t *counter, uint64_t value,
+        const ogs_otel_attr_t *attrs, size_t n);
+
+ogs_otel_histogram_t *ogs_otel_histogram_create(const char *name,
+        const char *description, const char *unit);
+void ogs_otel_histogram_record(ogs_otel_histogram_t *histogram, double value,
+        const ogs_otel_attr_t *attrs, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

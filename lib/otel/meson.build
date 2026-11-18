@@ -34,6 +34,7 @@ if get_option('otel')
         link_args : [
             '-L' + join_paths(otel_prefix, 'lib'),
             '-lopentelemetry_exporter_otlp_http',
+            '-lopentelemetry_exporter_otlp_http_metric',
             '-lopentelemetry_exporter_otlp_http_client',
             '-lopentelemetry_otlp_recordable',
             '-lopentelemetry_http_client_curl',

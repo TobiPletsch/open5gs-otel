@@ -59,7 +59,56 @@ void smf_otel_establishment_start(smf_sess_t *sess)
     ogs_otel_span_set_str(sess->establishment_span,
             OGS_OTEL_ATTR_PROCEDURE, "pdu_session_establishment");
 
+    /* for the duration histogram (metrics) */
+    sess->establishment_start = ogs_get_monotonic_time();
+
     ogs_otel_span_activate(sess->establishment_span);
+}
+
+/*
+ * Metrics (manual instrumentation, OTel metrics SDK):
+ *
+ *   open5gs.smf.pdu_session.establishment.attempts  counter   {attempt}
+ *   open5gs.smf.pdu_session.establishment.duration  histogram ms
+ *
+ * Recorded once per attempt, where the span ends, with the SAME attribute
+ * values as the span (5gs.outcome, error.type, 5gs.dnn). That is what makes
+ * the drill-down from a metric data point to its traces exact:
+ * "failures with error.type=X in minute M" = the spans with
+ * error.type=X that ended in minute M.
+ */
+static void record_attempt(smf_sess_t *sess,
+        const char *outcome, const char *error_type)
+{
+    static ogs_otel_counter_t *attempts;
+    static ogs_otel_histogram_t *duration;
+    ogs_otel_attr_t attrs[3];
+    size_t n = 0;
+
+    if (!attempts) {
+        attempts = ogs_otel_counter_create(
+                "open5gs.smf.pdu_session.establishment.attempts",
+                "PDU session establishment attempts by outcome and cause "
+                "(as reported by the SMF)", "{attempt}");
+        duration = ogs_otel_histogram_create(
+                "open5gs.smf.pdu_session.establishment.duration",
+                "Duration of PDU session establishment attempts", "ms");
+    }
+    if (!attempts)
+        return;                 /* tracing/metrics disabled */
+
+    attrs[n].key = OGS_OTEL_ATTR_OUTCOME; attrs[n++].value = outcome;
+    attrs[n].key = "error.type";
+    attrs[n++].value = error_type ? error_type : "none";
+    attrs[n].key = "5gs.dnn";
+    attrs[n++].value = sess->session.name ? sess->session.name : "unknown";
+
+    ogs_otel_counter_add(attempts, 1, attrs, n);
+    if (sess->establishment_start)
+        ogs_otel_histogram_record(duration,
+                (double)(ogs_get_monotonic_time() -
+                    sess->establishment_start) / 1000.0,   /* us -> ms */
+                attrs, 1);  /* outcome only: keep the histogram small */
 }
 
 void smf_otel_establishment_event(smf_sess_t *sess, const char *name)
@@ -142,12 +191,17 @@ void smf_otel_establishment_end(smf_sess_t *sess, const char *outcome,
         ogs_snprintf(error_type, sizeof(error_type),
                 "5gsm_cause_%d", gsm_cause);
         ogs_otel_span_set_str(span, "error.type", error_type);
+        record_attempt(sess, outcome, error_type);
     } else if (http_status) {
         ogs_snprintf(error_type, sizeof(error_type),
                 "http_%d", http_status);
         ogs_otel_span_set_str(span, "error.type", error_type);
+        record_attempt(sess, outcome, error_type);
     } else if (strcmp(outcome, OGS_OTEL_OUTCOME_SUCCESS)) {
         ogs_otel_span_set_str(span, "error.type", outcome);
+        record_attempt(sess, outcome, outcome);
+    } else {
+        record_attempt(sess, outcome, NULL);
     }
 
     ogs_otel_span_finish(&sess->establishment_span, outcome, description);

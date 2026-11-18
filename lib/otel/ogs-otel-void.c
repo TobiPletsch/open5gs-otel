@@ -82,3 +82,29 @@ const char *ogs_otel_span_span_id(ogs_otel_span_t *span)
     (void)span;
     return NULL;
 }
+
+ogs_otel_counter_t *ogs_otel_counter_create(const char *name,
+        const char *description, const char *unit)
+{
+    (void)name; (void)description; (void)unit;
+    return NULL;
+}
+
+void ogs_otel_counter_add(ogs_otel_counter_t *counter, uint64_t value,
+        const ogs_otel_attr_t *attrs, size_t n)
+{
+    (void)counter; (void)value; (void)attrs; (void)n;
+}
+
+ogs_otel_histogram_t *ogs_otel_histogram_create(const char *name,
+        const char *description, const char *unit)
+{
+    (void)name; (void)description; (void)unit;
+    return NULL;
+}
+
+void ogs_otel_histogram_record(ogs_otel_histogram_t *histogram, double value,
+        const ogs_otel_attr_t *attrs, size_t n)
+{
+    (void)histogram; (void)value; (void)attrs; (void)n;
+}

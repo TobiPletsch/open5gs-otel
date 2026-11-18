@@ -39,6 +39,20 @@
 #include "opentelemetry/trace/span.h"
 #include "opentelemetry/trace/tracer.h"
 
+#include <utility>
+#include <vector>
+
+#include "opentelemetry/common/key_value_iterable_view.h"
+#include "opentelemetry/context/context.h"
+#include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_factory.h"
+#include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_options.h"
+#include "opentelemetry/metrics/meter.h"
+#include "opentelemetry/metrics/sync_instruments.h"
+#include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader_factory.h"
+#include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader_options.h"
+#include "opentelemetry/sdk/metrics/meter_provider.h"
+#include "opentelemetry/sdk/metrics/view/view_registry.h"
+
 #include "ogs-otel.h"
 
 namespace nostd = opentelemetry::nostd;
@@ -46,6 +60,9 @@ namespace otlp = opentelemetry::exporter::otlp;
 namespace resource = opentelemetry::sdk::resource;
 namespace trace_api = opentelemetry::trace;
 namespace trace_sdk = opentelemetry::sdk::trace;
+namespace metrics_api = opentelemetry::metrics;
+namespace metrics_sdk = opentelemetry::sdk::metrics;
+namespace common = opentelemetry::common;
 
 #define OGS_OTEL_SCOPE_NAME "open5gs"
 
@@ -57,6 +74,54 @@ struct ogs_otel_span_s {
 
 static std::shared_ptr<trace_sdk::TracerProvider> provider;
 static nostd::shared_ptr<trace_api::Tracer> tracer;
+
+/* Metrics: MeterProvider -> PeriodicExportingMetricReader -> OTLP/HTTP */
+static std::shared_ptr<metrics_sdk::MeterProvider> meter_provider;
+static nostd::shared_ptr<metrics_api::Meter> meter;
+
+struct ogs_otel_counter_s {
+    nostd::unique_ptr<metrics_api::Counter<uint64_t>> counter;
+};
+struct ogs_otel_histogram_s {
+    nostd::unique_ptr<metrics_api::Histogram<double>> histogram;
+};
+
+/* Metrics export interval: OTEL_METRIC_EXPORT_INTERVAL (ms), default 10 s */
+static std::chrono::milliseconds metric_export_interval(void)
+{
+    const char *value = std::getenv("OTEL_METRIC_EXPORT_INTERVAL");
+    long ms = value ? std::strtol(value, NULL, 10) : 0;
+    return std::chrono::milliseconds(ms >= 1000 ? ms : 10000);
+}
+
+static void metrics_init(const resource::ResourceAttributes &attributes,
+        const char *service_version)
+{
+    /*
+     * Delta temporality: every export carries the counts of its own
+     * interval, so "failures per minute" is a plain sum in ClickHouse.
+     */
+    otlp::OtlpHttpMetricExporterOptions exporter_options;
+    exporter_options.content_type = otlp::HttpRequestContentType::kBinary;
+    exporter_options.aggregation_temporality =
+        otlp::PreferredAggregationTemporality::kDelta;
+
+    metrics_sdk::PeriodicExportingMetricReaderOptions reader_options;
+    reader_options.export_interval_millis = metric_export_interval();
+    reader_options.export_timeout_millis = std::chrono::milliseconds(5000);
+
+    auto reader = metrics_sdk::PeriodicExportingMetricReaderFactory::Create(
+            otlp::OtlpHttpMetricExporterFactory::Create(exporter_options),
+            reader_options);
+
+    meter_provider = std::make_shared<metrics_sdk::MeterProvider>(
+            std::unique_ptr<metrics_sdk::ViewRegistry>(
+                new metrics_sdk::ViewRegistry()),
+            resource::Resource::Create(attributes));
+    meter_provider->AddMetricReader(std::move(reader));
+    meter = meter_provider->GetMeter(OGS_OTEL_SCOPE_NAME,
+            service_version ? service_version : "");
+}
 
 static bool env_is_set(const char *name)
 {
@@ -102,7 +167,10 @@ int ogs_otel_init(const char *service_name, const char *service_version)
         tracer = provider->GetTracer(OGS_OTEL_SCOPE_NAME,
                 service_version ? service_version : "");
 
-        std::fprintf(stderr, "[otel] tracing enabled [service:%s]\n",
+        /* Same resource for metrics; same OTLP endpoint (/v1/metrics) */
+        metrics_init(attributes, service_version);
+
+        std::fprintf(stderr, "[otel] tracing and metrics enabled [service:%s]\n",
                 service_name ? service_name : "");
         return 0;
     } catch (const std::exception &e) {
@@ -113,6 +181,8 @@ int ogs_otel_init(const char *service_name, const char *service_version)
 
     tracer = nullptr;
     provider = nullptr;
+    meter = nullptr;
+    meter_provider = nullptr;
     return -1;
 }
 
@@ -123,10 +193,93 @@ void ogs_otel_final(void)
             provider->ForceFlush(std::chrono::milliseconds(2000));
             provider->Shutdown();
         }
+        if (meter_provider) {
+            /* last (partial) interval of metrics */
+            meter_provider->ForceFlush(std::chrono::milliseconds(2000));
+            meter_provider->Shutdown();
+        }
     } catch (...) {
     }
     tracer = nullptr;
     provider = nullptr;
+    /*
+     * Instruments created by the NFs stay allocated (process exit follows);
+     * the meter is kept so that late calls on them remain harmless no-ops
+     * of a shut-down provider.
+     */
+}
+
+/* ---------------------------------------------------------------- metrics */
+
+typedef std::vector<std::pair<nostd::string_view, common::AttributeValue>>
+    attribute_list_t;
+
+static attribute_list_t to_attributes(const ogs_otel_attr_t *attrs, size_t n)
+{
+    attribute_list_t list;
+    for (size_t i = 0; attrs && i < n; i++) {
+        if (attrs[i].key && attrs[i].value)
+            list.emplace_back(nostd::string_view(attrs[i].key),
+                    common::AttributeValue(nostd::string_view(attrs[i].value)));
+    }
+    return list;
+}
+
+ogs_otel_counter_t *ogs_otel_counter_create(const char *name,
+        const char *description, const char *unit)
+{
+    if (!meter || !name)
+        return NULL;
+    try {
+        ogs_otel_counter_t *c = new ogs_otel_counter_t();
+        c->counter = meter->CreateUInt64Counter(name,
+                description ? description : "", unit ? unit : "");
+        return c;
+    } catch (...) {
+        return NULL;
+    }
+}
+
+void ogs_otel_counter_add(ogs_otel_counter_t *counter, uint64_t value,
+        const ogs_otel_attr_t *attrs, size_t n)
+{
+    if (!counter || !counter->counter)
+        return;
+    try {
+        attribute_list_t list = to_attributes(attrs, n);
+        counter->counter->Add(value,
+                common::KeyValueIterableView<attribute_list_t>(list));
+    } catch (...) {
+    }
+}
+
+ogs_otel_histogram_t *ogs_otel_histogram_create(const char *name,
+        const char *description, const char *unit)
+{
+    if (!meter || !name)
+        return NULL;
+    try {
+        ogs_otel_histogram_t *h = new ogs_otel_histogram_t();
+        h->histogram = meter->CreateDoubleHistogram(name,
+                description ? description : "", unit ? unit : "");
+        return h;
+    } catch (...) {
+        return NULL;
+    }
+}
+
+void ogs_otel_histogram_record(ogs_otel_histogram_t *histogram, double value,
+        const ogs_otel_attr_t *attrs, size_t n)
+{
+    if (!histogram || !histogram->histogram)
+        return;
+    try {
+        attribute_list_t list = to_attributes(attrs, n);
+        histogram->histogram->Record(value,
+                common::KeyValueIterableView<attribute_list_t>(list),
+                opentelemetry::context::Context{});
+    } catch (...) {
+    }
 }
 
 /* Lower-case/upper-case hex to bytes; false on any invalid character */
