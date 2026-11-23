@@ -79,6 +79,9 @@ void ausf_state_operational(ogs_fsm_t *s, ausf_event_t *e)
             break;
         }
 
+        /* OpenTelemetry PoC: log lines of this request carry its trace */
+        ogs_otel_span_activate(ogs_sbi_server_otel_span_by_id(stream_id));
+
         rv = ogs_sbi_parse_request(&message, request);
         if (rv != OGS_OK) {
             /* 'message' buffer is released in ogs_sbi_parse_request() */
@@ -333,6 +336,13 @@ void ausf_state_operational(ogs_fsm_t *s, ausf_event_t *e)
                     sbi_xact->assoc_stream_id <= OGS_MAX_POOL_ID);
             e->h.sbi.data = OGS_UINT_TO_POINTER(sbi_xact->assoc_stream_id);
 
+            /*
+             * OpenTelemetry PoC: end the CLIENT span with the UDM's status
+             * and continue logging in the AMF request's SERVER span.
+             */
+            ogs_otel_span_activate(
+                    ogs_sbi_xact_otel_response(sbi_xact, message.res_status));
+
             ogs_sbi_xact_remove(sbi_xact);
 
             ausf_ue = ausf_ue_find_by_id(ausf_ue_id);
@@ -471,6 +481,9 @@ void ausf_state_operational(ogs_fsm_t *s, ausf_event_t *e)
             ogs_assert(sbi_xact->assoc_stream_id >= OGS_MIN_POOL_ID &&
                     sbi_xact->assoc_stream_id <= OGS_MAX_POOL_ID);
             stream = ogs_sbi_stream_find_by_id(sbi_xact->assoc_stream_id);
+
+            /* OpenTelemetry PoC: CLIENT span ends as "no response" */
+            ogs_otel_span_activate(ogs_sbi_xact_otel_response(sbi_xact, 0));
 
             ogs_sbi_xact_remove(sbi_xact);
 

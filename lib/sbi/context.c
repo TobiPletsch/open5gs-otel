@@ -2823,22 +2823,15 @@ static bool otel_component_is_id(const char *c)
     return (len && digits) || (len >= 32 && hexdash);
 }
 
-void ogs_sbi_xact_otel_start(ogs_sbi_xact_t *xact, ogs_otel_span_t *parent)
+char *ogs_sbi_otel_url_template(
+        ogs_sbi_request_t *request, char *path, size_t size)
 {
-    ogs_sbi_request_t *request = NULL;
-    char name[256], path[200];
-    char traceparent[OGS_OTEL_TRACEPARENT_LEN];
-    char *p = path, *last = path + sizeof(path);
-    OpenAPI_nf_type_e target_nf_type = OpenAPI_nf_type_NULL;
+    char *p = path, *last = path + size;
     int i;
 
-    ogs_assert(xact);
-
-    if (!parent || xact->otel_span)
-        return;
-    request = xact->request;
-    if (!request || !request->h.method)
-        return;
+    ogs_assert(request);
+    ogs_assert(path);
+    ogs_assert(size);
 
     path[0] = '\0';
     if (request->h.service.name) {
@@ -2850,17 +2843,25 @@ void ogs_sbi_xact_otel_start(ogs_sbi_xact_t *xact, ogs_otel_span_t *parent)
                     otel_component_is_id(c) ? "{id}" : c);
         }
     } else if (request->h.uri) {
-        /* "http://host:port/<service>/<version>/<resource...>" */
+        /*
+         * Outgoing URI-addressed requests:
+         *   "http://host:port/<service>/<version>/<resource...>?<query>"
+         * Incoming requests (server side): "/<service>/<version>/..."
+         * The query string is not part of the template.
+         */
         const char *s = strstr(request->h.uri, "://");
-        char *copy = NULL, *component = NULL, *saveptr = NULL;
+        char *copy = NULL, *component = NULL, *saveptr = NULL, *query = NULL;
         int n = 0;
 
         s = s ? strchr(s + 3, '/') : request->h.uri;
         if (s) {
             copy = ogs_strdup(s);
             ogs_assert(copy);
-            for (component = strtok_r(copy, "/?", &saveptr); component;
-                    component = strtok_r(NULL, "/?", &saveptr), n++) {
+            query = strchr(copy, '?');
+            if (query)
+                *query = '\0';
+            for (component = strtok_r(copy, "/", &saveptr); component;
+                    component = strtok_r(NULL, "/", &saveptr), n++) {
                 if (n == 1 && component[0] == 'v' &&
                         isdigit((unsigned char)component[1]))
                     continue;           /* API version */
@@ -2871,6 +2872,26 @@ void ogs_sbi_xact_otel_start(ogs_sbi_xact_t *xact, ogs_otel_span_t *parent)
             ogs_free(copy);
         }
     }
+
+    return path;
+}
+
+void ogs_sbi_xact_otel_start(ogs_sbi_xact_t *xact, ogs_otel_span_t *parent)
+{
+    ogs_sbi_request_t *request = NULL;
+    char name[256], path[200];
+    char traceparent[OGS_OTEL_TRACEPARENT_LEN];
+    OpenAPI_nf_type_e target_nf_type = OpenAPI_nf_type_NULL;
+
+    ogs_assert(xact);
+
+    if (!parent || xact->otel_span)
+        return;
+    request = xact->request;
+    if (!request || !request->h.method)
+        return;
+
+    ogs_sbi_otel_url_template(request, path, sizeof(path));
 
     ogs_snprintf(name, sizeof(name), "%s %s", request->h.method, path);
 
@@ -2900,6 +2921,19 @@ void ogs_sbi_xact_otel_status(ogs_sbi_xact_t *xact, int status)
 {
     ogs_assert(xact);
     xact->otel_status = status;
+}
+
+ogs_otel_span_t *ogs_sbi_xact_otel_response(ogs_sbi_xact_t *xact, int status)
+{
+    ogs_assert(xact);
+
+    ogs_sbi_xact_otel_status(xact, status);
+
+    if (xact->assoc_stream_id >= OGS_MIN_POOL_ID &&
+        xact->assoc_stream_id <= OGS_MAX_POOL_ID)
+        return ogs_sbi_server_otel_span_by_id(xact->assoc_stream_id);
+
+    return NULL;
 }
 
 ogs_sbi_subscription_spec_t *ogs_sbi_subscription_spec_add(

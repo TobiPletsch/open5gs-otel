@@ -116,6 +116,14 @@ const char *ogs_otel_span_span_id(ogs_otel_span_t *span);
 void ogs_otel_span_activate(ogs_otel_span_t *span);
 
 /*
+ * Call before ending a span that may be the active one: drops the pointer
+ * (so it is never used after the span is freed) but keeps its trace/span
+ * IDs as the log context until the next ogs_otel_span_activate(), so the
+ * remaining log lines of the current event stay correlated.
+ */
+void ogs_otel_span_forget_active(ogs_otel_span_t *span);
+
+/*
  * W3C traceparent of the SBI request currently being processed by this
  * thread (set when an SBI server event is dispatched, NULL afterwards).
  * The string is owned by the request; it is only valid during the event.

@@ -62,6 +62,14 @@ bool ausf_nausf_auth_handle_authenticate(ausf_ue_t *ausf_ue,
     ausf_ue->serving_network_name = ogs_strdup(serving_network_name);
     ogs_assert(ausf_ue->serving_network_name);
 
+    /*
+     * OpenTelemetry PoC: the SUCI is only in the body of this request.
+     * Set the UE reference now, so it is also there when the UDM rejects
+     * the UE (e.g. not provisioned, 404) and the SUPI is never learned.
+     */
+    ogs_sbi_server_otel_set_ue(stream,
+            ausf_ue->supi ? ausf_ue->supi : ausf_ue->suci);
+
     r = ausf_sbi_discover_and_send(
             OpenAPI_service_name_nudm_ueau, NULL,
             ausf_nudm_ueau_build_get,
@@ -121,6 +129,11 @@ bool ausf_nausf_auth_handle_authenticate_confirmation(ausf_ue_t *ausf_ue,
     } else {
         ausf_ue->auth_result = OpenAPI_auth_result_AUTHENTICATION_SUCCESS;
     }
+
+    /* OpenTelemetry PoC: RES* check result (before the UDM is informed) */
+    ogs_sbi_server_otel_set_ue(stream, ausf_ue->supi);
+    ogs_sbi_server_otel_set_str(stream, "5gs.auth.res_star_check",
+            OpenAPI_auth_result_ToString(ausf_ue->auth_result));
 
     r = ausf_sbi_discover_and_send(
             OpenAPI_service_name_nudm_ueau, NULL,

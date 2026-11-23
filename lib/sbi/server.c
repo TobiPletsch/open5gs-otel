@@ -190,12 +190,15 @@ void ogs_sbi_server_stop_all(void)
 bool ogs_sbi_server_send_rspmem_persistent(
         ogs_sbi_stream_t *stream, ogs_sbi_response_t *response)
 {
+    ogs_sbi_server_otel_response(stream, response);
     return ogs_sbi_server_actions.send_rspmem_persistent(stream, response);
 }
 
 bool ogs_sbi_server_send_response(
         ogs_sbi_stream_t *stream, ogs_sbi_response_t *response)
 {
+    /* OpenTelemetry PoC: ends the stream's SERVER span (if any) */
+    ogs_sbi_server_otel_response(stream, response);
     return ogs_sbi_server_actions.send_response(stream, response);
 }
 

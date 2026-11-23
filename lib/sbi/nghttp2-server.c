@@ -860,6 +860,9 @@ static void stream_remove(ogs_sbi_stream_t *stream)
 
     ogs_list_remove(&sbi_sess->stream_list, stream);
 
+    /* OpenTelemetry PoC: SERVER span of a stream that got no response */
+    ogs_sbi_server_otel_stream_removed(stream->id);
+
     ogs_assert(stream->request);
     ogs_sbi_request_free(stream->request);
 

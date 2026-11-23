@@ -106,6 +106,9 @@ bool udr_nudr_dr_handle_subscription_authentication(
     rv = ogs_dbi_auth_info(supi, &auth_info);
     if (rv != OGS_OK) {
         ogs_warn("[%s] Cannot find SUPI in DB", supi);
+        /* OpenTelemetry PoC: subscriber not provisioned */
+        ogs_sbi_server_otel_set_str(stream,
+                "5gs.udr.result", "subscriber_not_found");
         ogs_assert(true ==
             ogs_sbi_server_send_error(stream, OGS_SBI_HTTP_STATUS_NOT_FOUND,
                 recvmsg, "Cannot find SUPI Type", supi, NULL));

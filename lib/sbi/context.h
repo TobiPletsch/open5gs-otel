@@ -682,6 +682,23 @@ void ogs_sbi_xact_otel_start(
         ogs_sbi_xact_t *xact, struct ogs_otel_span_s *parent);
 void ogs_sbi_xact_otel_status(ogs_sbi_xact_t *xact, int status);
 
+/*
+ * Records the response status of the xact's CLIENT span (like
+ * ogs_sbi_xact_otel_status) and returns the SERVER span of the stream the
+ * xact belongs to (assoc_stream_id), so that the NF can make it the log
+ * context while it handles the response. NULL if there is none.
+ */
+struct ogs_otel_span_s *ogs_sbi_xact_otel_response(
+        ogs_sbi_xact_t *xact, int status);
+
+/*
+ * Span name template of a request: "<service>/<resource>/{id}/...",
+ * IDs (SUPI, SUCI, context refs, UUIDs) replaced by "{id}", no API
+ * version, no query string. Returns path.
+ */
+char *ogs_sbi_otel_url_template(
+        ogs_sbi_request_t *request, char *path, size_t size);
+
 ogs_sbi_subscription_spec_t *ogs_sbi_subscription_spec_add(
         OpenAPI_nf_type_e nf_type, const OpenAPI_service_name_e service_name);
 void ogs_sbi_subscription_spec_remove(

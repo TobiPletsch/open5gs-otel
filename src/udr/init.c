@@ -31,6 +31,13 @@ int udr_initialize(void)
     rv = ogs_app_parse_local_conf(APP_NAME);
     if (rv != OGS_OK) return rv;
 
+    /*
+     * OpenTelemetry PoC: one SERVER span per traced SBI request
+     * (lib/sbi/otel-server.c). No-op without an OTLP endpoint.
+     */
+    ogs_otel_init("open5gs-udr", ogs_app()->version);
+    ogs_sbi_server_otel_enable();
+
     ogs_sbi_context_init(OpenAPI_nf_type_UDR);
     udr_context_init();
 
@@ -72,6 +79,8 @@ void udr_terminate(void)
 
     udr_context_final();
     ogs_sbi_context_final();
+
+    ogs_otel_final();
 }
 
 static void udr_main(void *data)
@@ -113,6 +122,9 @@ static void udr_main(void *data)
             ogs_assert(e);
             ogs_fsm_dispatch(&udr_sm, e);
             ogs_event_free(e);
+
+            /* OpenTelemetry PoC: no trace context leaks into the next event */
+            ogs_otel_span_activate(NULL);
         }
     }
 done:

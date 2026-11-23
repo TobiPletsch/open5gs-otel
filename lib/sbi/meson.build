@@ -31,6 +31,7 @@ libsbi_sources = files('''
     mhd-server.c
     nghttp2-server.c
     server.c
+    otel-server.c
 
     client.c
     context.c

@@ -201,6 +201,11 @@ bool ausf_nudm_ueau_handle_get(ausf_ue_t *ausf_ue,
 
     ausf_ue->auth_type = AuthenticationInfoResult->auth_type;
 
+    /* OpenTelemetry PoC: UE and auth type on the AMF's request span */
+    ogs_sbi_server_otel_set_ue(stream, ausf_ue->supi);
+    ogs_sbi_server_otel_set_str(stream, "5gs.auth.type",
+            OpenAPI_auth_type_ToString(ausf_ue->auth_type));
+
     memcpy(ausf_ue->rand, rand, sizeof(ausf_ue->rand));
     memcpy(ausf_ue->xres_star, xres_star, sizeof(ausf_ue->xres_star));
     memcpy(ausf_ue->kausf, kausf, sizeof(ausf_ue->kausf));
@@ -366,6 +371,10 @@ bool ausf_nudm_ueau_handle_result_confirmation_inform(ausf_ue_t *ausf_ue,
 
     ConfirmationDataResponse.auth_result = ausf_ue->auth_result;
     ConfirmationDataResponse.supi = ausf_ue->supi;
+
+    /* OpenTelemetry PoC: final 5G-AKA result on the confirmation span */
+    ogs_sbi_server_otel_set_str(stream, "5gs.auth.result",
+            OpenAPI_auth_result_ToString(ausf_ue->auth_result));
 
     ogs_kdf_kseaf(ausf_ue->serving_network_name,
             ausf_ue->kausf, ausf_ue->kseaf);

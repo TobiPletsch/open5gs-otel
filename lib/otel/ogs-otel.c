@@ -59,6 +59,12 @@ void ogs_otel_span_activate(ogs_otel_span_t *span)
             ogs_otel_span_trace_id(span), ogs_otel_span_span_id(span));
 }
 
+void ogs_otel_span_forget_active(ogs_otel_span_t *span)
+{
+    if (span && active_span == span)
+        active_span = NULL;
+}
+
 void ogs_otel_span_finish(ogs_otel_span_t **span_ptr,
         const char *outcome, const char *description)
 {

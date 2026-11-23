@@ -117,6 +117,44 @@ bool ogs_sbi_server_verify_client_identity(
 ogs_pool_id_t ogs_sbi_id_from_stream(ogs_sbi_stream_t *stream);
 void *ogs_sbi_stream_find_by_id(ogs_pool_id_t id);
 
+/*
+ * OpenTelemetry PoC (lib/sbi/otel-server.c): generic SERVER span per
+ * incoming SBI request, for NFs without their own procedure spans.
+ *
+ * Opt-in per NF with ogs_sbi_server_otel_enable() (AUSF, UDM, UDR). A span
+ * is only started when the request carries a W3C traceparent, i.e. when the
+ * caller is traced - NRF heartbeats etc. stay untraced. It is keyed by the
+ * stream ID, ended when the response is sent (ogs_sbi_server_send_response)
+ * or when the stream goes away without one.
+ *
+ * Outgoing requests of an xact whose assoc_stream_id has a SERVER span get
+ * a CLIENT child span automatically (ogs_sbi_discover_and_send).
+ */
+struct ogs_otel_span_s;
+
+void ogs_sbi_server_otel_enable(void);
+bool ogs_sbi_server_otel_enabled(void);
+
+/* Called by ogs_sbi_server_handler() for every incoming request */
+void ogs_sbi_server_otel_request(
+        ogs_sbi_request_t *request, ogs_pool_id_t stream_id);
+/* Called before a response is handed to the HTTP/2 backend */
+void ogs_sbi_server_otel_response(
+        ogs_sbi_stream_t *stream, ogs_sbi_response_t *response);
+/* Called by the backend when a stream is removed */
+void ogs_sbi_server_otel_stream_removed(ogs_pool_id_t stream_id);
+
+/* SERVER span of a stream, or NULL (not traced / not enabled) */
+struct ogs_otel_span_s *ogs_sbi_server_otel_span_by_id(ogs_pool_id_t stream_id);
+struct ogs_otel_span_s *ogs_sbi_server_otel_span(ogs_sbi_stream_t *stream);
+
+/* Domain attributes on the stream's SERVER span (no-op if none) */
+void ogs_sbi_server_otel_set_str(ogs_sbi_stream_t *stream,
+        const char *key, const char *value);
+/* 5gs.ue.ref from a SUPI ("imsi-...") or null-scheme SUCI */
+void ogs_sbi_server_otel_set_ue(
+        ogs_sbi_stream_t *stream, const char *supi_or_suci);
+
 ogs_sbi_server_t *ogs_sbi_server_first(void);
 ogs_sbi_server_t *ogs_sbi_server_next(ogs_sbi_server_t *current);
 ogs_sbi_server_t *ogs_sbi_server_first_by_interface(const char *interface);

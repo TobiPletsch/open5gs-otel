@@ -70,6 +70,9 @@ int ogs_sbi_server_handler(ogs_sbi_request_t *request, void *data)
     ogs_assert(request);
     ogs_assert(data);
 
+    /* OpenTelemetry PoC: SERVER span if enabled and the caller is traced */
+    ogs_sbi_server_otel_request(request, OGS_POINTER_TO_UINT(data));
+
     e = ogs_event_new(OGS_EVENT_SBI_SERVER);
     ogs_assert(e);
 
@@ -296,6 +299,18 @@ int ogs_sbi_discover_and_send(ogs_sbi_xact_t *xact)
     OpenAPI_nf_type_e target_nf_type = OpenAPI_nf_type_NULL;
     OpenAPI_nf_type_e requester_nf_type = OpenAPI_nf_type_NULL;
     char *apiroot = NULL;
+
+    /*
+     * OpenTelemetry PoC: a request made while serving a traced request
+     * (e.g. UDM -> UDR for an AUSF request) becomes a CLIENT child span of
+     * that request's SERVER span. No-op if the NF already started a span
+     * for this xact (AMF/SMF) or the stream has no SERVER span.
+     */
+    if (!xact->otel_span &&
+        xact->assoc_stream_id >= OGS_MIN_POOL_ID &&
+        xact->assoc_stream_id <= OGS_MAX_POOL_ID)
+        ogs_sbi_xact_otel_start(xact,
+                ogs_sbi_server_otel_span_by_id(xact->assoc_stream_id));
 
     sbi_object = xact->sbi_object;
     ogs_assert(sbi_object);

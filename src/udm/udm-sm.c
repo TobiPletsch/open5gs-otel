@@ -84,6 +84,9 @@ void udm_state_operational(ogs_fsm_t *s, udm_event_t *e)
             break;
         }
 
+        /* OpenTelemetry PoC: log lines of this request carry its trace */
+        ogs_otel_span_activate(ogs_sbi_server_otel_span_by_id(stream_id));
+
         rv = ogs_sbi_parse_request(&message, request);
         if (rv != OGS_OK) {
             /* 'message' buffer is released in ogs_sbi_parse_request() */
@@ -465,6 +468,10 @@ void udm_state_operational(ogs_fsm_t *s, udm_event_t *e)
                         e->h.sbi.data =
                             OGS_UINT_TO_POINTER(OGS_INVALID_POOL_ID);
 
+                    /* OpenTelemetry PoC: see the UE case below */
+                    ogs_otel_span_activate(ogs_sbi_xact_otel_response(
+                                sbi_xact, message.res_status));
+
                     ogs_sbi_xact_remove(sbi_xact);
 
                     sess = udm_sess_find_by_id(sess_id);
@@ -523,6 +530,14 @@ void udm_state_operational(ogs_fsm_t *s, udm_event_t *e)
                             OGS_UINT_TO_POINTER(OGS_INVALID_POOL_ID);
 
                     e->h.sbi.state = sbi_xact->state;
+
+                    /*
+                     * OpenTelemetry PoC: end the CLIENT span with the UDR's
+                     * status and continue logging in the SERVER span of the
+                     * request (AUSF/AMF/SMF) this UDR call was made for.
+                     */
+                    ogs_otel_span_activate(ogs_sbi_xact_otel_response(
+                                sbi_xact, message.res_status));
 
                     ogs_sbi_xact_remove(sbi_xact);
 
@@ -667,6 +682,9 @@ void udm_state_operational(ogs_fsm_t *s, udm_event_t *e)
             ogs_assert(sbi_xact->assoc_stream_id >= OGS_MIN_POOL_ID &&
                     sbi_xact->assoc_stream_id <= OGS_MAX_POOL_ID);
             stream = ogs_sbi_stream_find_by_id(sbi_xact->assoc_stream_id);
+
+            /* OpenTelemetry PoC: CLIENT span ends as "no response" */
+            ogs_otel_span_activate(ogs_sbi_xact_otel_response(sbi_xact, 0));
 
             ogs_sbi_xact_remove(sbi_xact);
 

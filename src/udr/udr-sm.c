@@ -75,6 +75,9 @@ void udr_state_operational(ogs_fsm_t *s, udr_event_t *e)
             break;
         }
 
+        /* OpenTelemetry PoC: log lines of this request carry its trace */
+        ogs_otel_span_activate(ogs_sbi_server_otel_span_by_id(stream_id));
+
         rv = ogs_sbi_parse_request(&message, request);
         if (rv != OGS_OK) {
             /* 'message' buffer is released in ogs_sbi_parse_request() */

@@ -31,6 +31,14 @@ int ausf_initialize(void)
     rv = ogs_app_parse_local_conf(APP_NAME);
     if (rv != OGS_OK) return rv;
 
+    /*
+     * OpenTelemetry PoC: no procedure spans of its own; one SERVER span per
+     * traced SBI request (lib/sbi/otel-server.c). No-op without an OTLP
+     * endpoint (OTEL_EXPORTER_OTLP_ENDPOINT).
+     */
+    ogs_otel_init("open5gs-ausf", ogs_app()->version);
+    ogs_sbi_server_otel_enable();
+
     ogs_sbi_context_init(OpenAPI_nf_type_AUSF);
     ausf_context_init();
 
@@ -67,6 +75,8 @@ void ausf_terminate(void)
 
     ausf_context_final();
     ogs_sbi_context_final();
+
+    ogs_otel_final();
 }
 
 static void ausf_main(void *data)
@@ -108,6 +118,9 @@ static void ausf_main(void *data)
             ogs_assert(e);
             ogs_fsm_dispatch(&ausf_sm, e);
             ogs_event_free(e);
+
+            /* OpenTelemetry PoC: no trace context leaks into the next event */
+            ogs_otel_span_activate(NULL);
         }
     }
 done:

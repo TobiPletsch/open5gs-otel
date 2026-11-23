@@ -23,6 +23,7 @@
 #include "ogs-app.h"
 #include "ogs-dbi.h"
 #include "ogs-sbi.h"
+#include "ogs-otel.h"
 
 #include "udr-sm.h"
 
