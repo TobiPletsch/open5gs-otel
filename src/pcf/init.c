@@ -34,6 +34,14 @@ int pcf_initialize(void)
 
     pcf_metrics_init();
 
+    /*
+     * OpenTelemetry PoC: one SERVER span per traced SBI request (SMF/AMF),
+     * CLIENT child spans for the UDR and BSF calls made for it
+     * (lib/sbi/otel-server.c). No-op without OTEL_EXPORTER_OTLP_ENDPOINT.
+     */
+    ogs_otel_init("open5gs-pcf", ogs_app()->version);
+    ogs_sbi_server_otel_enable();
+
     ogs_sbi_context_init(OpenAPI_nf_type_PCF);
     pcf_context_init();
 
@@ -88,6 +96,8 @@ void pcf_terminate(void)
     ogs_sbi_context_final();
 
     pcf_metrics_final();
+
+    ogs_otel_final();
 }
 
 static void pcf_main(void *data)
@@ -128,6 +138,9 @@ static void pcf_main(void *data)
 
             ogs_assert(e);
             ogs_fsm_dispatch(&pcf_sm, e);
+
+            /* OpenTelemetry PoC: no trace context leaks into the next event */
+            ogs_otel_span_activate(NULL);
             ogs_event_free(e);
         }
     }

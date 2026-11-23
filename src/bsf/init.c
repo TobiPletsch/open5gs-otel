@@ -33,6 +33,14 @@ int bsf_initialize(void)
     rv = ogs_app_parse_local_conf(APP_NAME);
     if (rv != OGS_OK) return rv;
 
+    /*
+     * OpenTelemetry PoC: one SERVER span per traced SBI request (PCF
+     * binding register/de-register, lib/sbi/otel-server.c). No-op without
+     * OTEL_EXPORTER_OTLP_ENDPOINT.
+     */
+    ogs_otel_init("open5gs-bsf", ogs_app()->version);
+    ogs_sbi_server_otel_enable();
+
     ogs_sbi_context_init(OpenAPI_nf_type_BSF);
     bsf_context_init();
 
@@ -70,6 +78,8 @@ void bsf_terminate(void)
     bsf_context_final();
 
     ogs_sbi_context_final();
+
+    ogs_otel_final();
 }
 
 static void bsf_main(void *data)
@@ -110,6 +120,9 @@ static void bsf_main(void *data)
 
             ogs_assert(e);
             ogs_fsm_dispatch(&bsf_sm, e);
+
+            /* OpenTelemetry PoC: no trace context leaks into the next event */
+            ogs_otel_span_activate(NULL);
             ogs_event_free(e);
         }
     }

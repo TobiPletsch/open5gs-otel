@@ -142,6 +142,9 @@ bool pcf_npcf_am_policy_control_handle_create(pcf_ue_am_t *pcf_ue_am,
     ogs_assert(server);
     ogs_assert(message);
 
+    /* OpenTelemetry PoC: AM policy during registration (AMF trace) */
+    ogs_sbi_server_otel_set_ue(stream, pcf_ue_am->supi);
+
     PolicyAssociationRequest = message->PolicyAssociationRequest;
     if (!PolicyAssociationRequest) {
         ogs_error("[%s] No PolicyAssociationRequest", pcf_ue_am->supi);
@@ -344,6 +347,10 @@ bool pcf_npcf_smpolicycontrol_handle_create(pcf_sess_t *sess,
     pcf_ue_sm = pcf_ue_sm_find_by_id(sess->pcf_ue_sm_id);
     ogs_assert(stream);
     ogs_assert(message);
+
+    /* OpenTelemetry PoC: the SUPI is only in the request body */
+    if (pcf_ue_sm)
+        ogs_sbi_server_otel_set_ue(stream, pcf_ue_sm->supi);
 
     SmPolicyContextData = message->SmPolicyContextData;
     if (!SmPolicyContextData) {
@@ -622,6 +629,14 @@ bool pcf_npcf_smpolicycontrol_handle_create(pcf_sess_t *sess,
         sess->subscribed_default_qos = OpenAPI_subscribed_default_qos_copy(
             sess->subscribed_default_qos, SmPolicyContextData->subs_def_qos);
 
+    /* OpenTelemetry PoC: same attributes as the SMF span of the session */
+    if (ogs_sbi_server_otel_span(stream)) {
+        char psi[4];
+        ogs_snprintf(psi, sizeof(psi), "%d", sess->psi);
+        ogs_sbi_server_otel_set_str(stream, "5gs.dnn", sess->dnn);
+        ogs_sbi_server_otel_set_str(stream, "5gs.pdu_session_id", psi);
+    }
+
     if (ogs_sbi_supi_in_vplmn(pcf_ue_sm->supi) == true) {
         /* Visited PLMN */
         r = pcf_sess_sbi_discover_and_send(
@@ -682,6 +697,10 @@ bool pcf_npcf_smpolicycontrol_handle_delete(pcf_sess_t *sess,
     pcf_ue_sm = pcf_ue_sm_find_by_id(sess->pcf_ue_sm_id);
     ogs_assert(stream);
     ogs_assert(message);
+
+    /* OpenTelemetry PoC */
+    if (pcf_ue_sm)
+        ogs_sbi_server_otel_set_ue(stream, pcf_ue_sm->supi);
 
     SmPolicyDeleteData = message->SmPolicyDeleteData;
     if (!SmPolicyDeleteData) {

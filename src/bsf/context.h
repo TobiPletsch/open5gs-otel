@@ -21,6 +21,7 @@
 #define BSF_CONTEXT_H
 
 #include "ogs-sbi.h"
+#include "ogs-otel.h"
 #include "ogs-app.h"
 
 #include "bsf-sm.h"

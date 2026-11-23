@@ -742,6 +742,8 @@ struct amf_ue_s {
     /* IDs of the last registration span, kept after it ended (span link) */
     char last_registration_trace_id[33];
     char last_registration_span_id[17];
+    /* start of the open registration span (duration histogram) */
+    ogs_time_t registration_start;
 
     /* UE Radio Capability */
     OCTET_STRING_t  ueRadioCapability;

@@ -43,6 +43,9 @@ bool bsf_nbsf_management_handle_pcf_binding(
     if (recvmsg->h.resource.component[1]) {
         SWITCH(recvmsg->h.method)
         CASE(OGS_SBI_HTTP_METHOD_DELETE)
+            /* OpenTelemetry PoC */
+            if (sess)
+                ogs_sbi_server_otel_set_ue(stream, sess->supi);
             memset(&sendmsg, 0, sizeof(sendmsg));
 
             response = ogs_sbi_build_response(
@@ -184,6 +187,10 @@ bool bsf_nbsf_management_handle_pcf_binding(
                     ogs_free(sess->gpsi);
                 sess->gpsi = ogs_strdup(RecvPcfBinding->gpsi);
             }
+
+            /* OpenTelemetry PoC: binding of which UE / DNN */
+            ogs_sbi_server_otel_set_ue(stream, sess->supi);
+            ogs_sbi_server_otel_set_str(stream, "5gs.dnn", sess->dnn);
 
             memset(&header, 0, sizeof(header));
             header.service.name =

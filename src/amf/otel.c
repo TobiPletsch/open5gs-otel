@@ -35,18 +35,73 @@ static const char *registration_type_name(uint8_t value)
     }
 }
 
+/*
+ * Metrics (manual instrumentation, OTel metrics SDK):
+ *
+ *   open5gs.amf.registration.attempts  counter   {attempt}
+ *   open5gs.amf.registration.duration  histogram ms
+ *
+ * Recorded once per registration attempt, where the amf.registration span
+ * ends, with the SAME attribute values as the span (5gs.outcome,
+ * error.type, 5gs.registration.type) - the same contract as the SMF's
+ * PDU session metrics, so a data point drills down exactly to its spans.
+ */
+static void record_registration(amf_ue_t *amf_ue,
+        const char *outcome, const char *error_type)
+{
+    static ogs_otel_counter_t *attempts;
+    static ogs_otel_histogram_t *duration;
+    ogs_otel_attr_t attrs[3];
+    size_t n = 0;
+
+    if (!attempts) {
+        attempts = ogs_otel_counter_create(
+                "open5gs.amf.registration.attempts",
+                "Registration attempts by outcome and cause "
+                "(as reported by the AMF)", "{attempt}");
+        duration = ogs_otel_histogram_create(
+                "open5gs.amf.registration.duration",
+                "Duration of registration attempts", "ms");
+    }
+    if (!attempts)
+        return;                 /* tracing/metrics disabled */
+
+    attrs[n].key = OGS_OTEL_ATTR_OUTCOME; attrs[n++].value = outcome;
+    attrs[n].key = "error.type";
+    attrs[n++].value = error_type ? error_type : "none";
+    attrs[n].key = "5gs.registration.type";
+    attrs[n++].value = registration_type_name(
+            amf_ue->nas.registration.value);
+
+    ogs_otel_counter_add(attempts, 1, attrs, n);
+    if (amf_ue->registration_start)
+        ogs_otel_histogram_record(duration,
+                (double)(ogs_get_monotonic_time() -
+                    amf_ue->registration_start) / 1000.0,   /* us -> ms */
+                attrs, 1);  /* outcome only: keep the histogram small */
+    amf_ue->registration_start = 0;
+}
+
 void amf_otel_registration_start(amf_ue_t *amf_ue)
 {
     ran_ue_t *ran_ue = NULL;
 
     ogs_assert(amf_ue);
 
+    if (amf_ue->registration_span) {
+        ogs_otel_span_set_str(amf_ue->registration_span,
+                "error.type", OGS_OTEL_OUTCOME_SUPERSEDED);
+        record_registration(amf_ue, OGS_OTEL_OUTCOME_SUPERSEDED,
+                OGS_OTEL_OUTCOME_SUPERSEDED);
+    }
     ogs_otel_span_finish(&amf_ue->registration_span,
             OGS_OTEL_OUTCOME_SUPERSEDED, "new Registration Request");
 
     amf_ue->registration_span = ogs_otel_span_start("amf.registration");
     if (!amf_ue->registration_span)
         return;
+
+    amf_ue->registration_start = ogs_get_monotonic_time();
 
     ogs_otel_span_set_str(amf_ue->registration_span,
             OGS_OTEL_ATTR_NF, "AMF");
@@ -142,6 +197,10 @@ void amf_otel_registration_end(amf_ue_t *amf_ue,
         ogs_otel_span_set_str(amf_ue->registration_span,
                 "error.type", outcome);
     }
+
+    record_registration(amf_ue, outcome,
+            gmm_cause ? error_type :
+            strcmp(outcome, OGS_OTEL_OUTCOME_SUCCESS) ? outcome : NULL);
 
     ogs_otel_span_finish(&amf_ue->registration_span, outcome, description);
 }

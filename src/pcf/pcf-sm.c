@@ -90,6 +90,9 @@ void pcf_state_operational(ogs_fsm_t *s, pcf_event_t *e)
             break;
         }
 
+        /* OpenTelemetry PoC: log lines of this request carry its trace */
+        ogs_otel_span_activate(ogs_sbi_server_otel_span_by_id(stream_id));
+
         rv = ogs_sbi_parse_request(&message, request);
         if (rv != OGS_OK) {
             /* 'message' buffer is released in ogs_sbi_parse_request() */
@@ -551,6 +554,14 @@ void pcf_state_operational(ogs_fsm_t *s, pcf_event_t *e)
                         e->h.sbi.data =
                             OGS_UINT_TO_POINTER(OGS_INVALID_POOL_ID);
 
+                    /*
+                     * OpenTelemetry PoC: end the CLIENT span with the UDR's
+                     * status and continue logging in the SERVER span of the
+                     * AMF/SMF request this UDR query was made for.
+                     */
+                    ogs_otel_span_activate(ogs_sbi_xact_otel_response(
+                                sbi_xact, message.res_status));
+
                     ogs_sbi_xact_remove(sbi_xact);
 
                     pcf_ue_am = pcf_ue_am_find_by_id(pcf_ue_am_id);
@@ -602,6 +613,14 @@ void pcf_state_operational(ogs_fsm_t *s, pcf_event_t *e)
                     else
                         e->h.sbi.data =
                             OGS_UINT_TO_POINTER(OGS_INVALID_POOL_ID);
+
+                    /*
+                     * OpenTelemetry PoC: end the CLIENT span with the UDR's
+                     * status and continue logging in the SERVER span of the
+                     * AMF/SMF request this UDR query was made for.
+                     */
+                    ogs_otel_span_activate(ogs_sbi_xact_otel_response(
+                                sbi_xact, message.res_status));
 
                     ogs_sbi_xact_remove(sbi_xact);
 
@@ -673,6 +692,10 @@ void pcf_state_operational(ogs_fsm_t *s, pcf_event_t *e)
                 else
                     e->h.sbi.data =
                         OGS_UINT_TO_POINTER(OGS_INVALID_POOL_ID);
+
+                /* OpenTelemetry PoC: same for the BSF answer */
+                ogs_otel_span_activate(ogs_sbi_xact_otel_response(
+                            sbi_xact, message.res_status));
 
                 ogs_sbi_xact_remove(sbi_xact);
 
@@ -829,6 +852,9 @@ void pcf_state_operational(ogs_fsm_t *s, pcf_event_t *e)
             stream = ogs_sbi_stream_find_by_id(sbi_xact->assoc_stream_id);
 
             service_name = sbi_xact->service_name;
+
+            /* OpenTelemetry PoC: CLIENT span ends as "no response" */
+            ogs_otel_span_activate(ogs_sbi_xact_otel_response(sbi_xact, 0));
 
             ogs_sbi_xact_remove(sbi_xact);
 

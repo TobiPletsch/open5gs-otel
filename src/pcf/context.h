@@ -23,6 +23,7 @@
 #include "ogs-app.h"
 #include "ogs-crypt.h"
 #include "ogs-sbi.h"
+#include "ogs-otel.h"
 #include "ogs-dbi.h"
 
 #include "pcf-sm.h"
