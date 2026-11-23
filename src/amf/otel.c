@@ -121,8 +121,13 @@ void amf_otel_registration_end(amf_ue_t *amf_ue,
     if (!amf_ue->registration_span)
         return;
 
-    /* SUPI is known once authenticated; otherwise fall back to SUCI */
-    if (ogs_otel_ue_ref(amf_ue->supi ? amf_ue->supi : amf_ue->suci, ue_ref))
+    /*
+     * SUPI is known once authenticated; otherwise fall back to the SUCI.
+     * A null-scheme SUCI is converted to the SUPI, so rejects of UEs that
+     * are never identified (not provisioned) match the AUSF/UDM/UDR spans
+     * and the dashboard's IMSI search.
+     */
+    if (ogs_sbi_otel_ue_ref(amf_ue->supi ? amf_ue->supi : amf_ue->suci, ue_ref))
         ogs_otel_span_set_str(amf_ue->registration_span,
                 OGS_OTEL_ATTR_UE_REF, ue_ref);
 

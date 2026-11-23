@@ -155,6 +155,14 @@ void ogs_sbi_server_otel_set_str(ogs_sbi_stream_t *stream,
 void ogs_sbi_server_otel_set_ue(
         ogs_sbi_stream_t *stream, const char *supi_or_suci);
 
+/*
+ * ogs_otel_ue_ref() of the SUPI; a null-scheme SUCI is converted to its
+ * SUPI first, so a UE that is never identified (e.g. not provisioned) gets
+ * the same reference in every NF and in the dashboard's IMSI search.
+ * Other identities are hashed as they are. buf: OGS_OTEL_UE_REF_LEN bytes.
+ */
+char *ogs_sbi_otel_ue_ref(const char *supi_or_suci, char *buf);
+
 ogs_sbi_server_t *ogs_sbi_server_first(void);
 ogs_sbi_server_t *ogs_sbi_server_next(ogs_sbi_server_t *current);
 ogs_sbi_server_t *ogs_sbi_server_first_by_interface(const char *interface);

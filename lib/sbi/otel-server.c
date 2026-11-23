@@ -88,25 +88,32 @@ static bool otel_is_null_scheme_suci(const char *suci)
     return false;
 }
 
+char *ogs_sbi_otel_ue_ref(const char *supi_or_suci, char *buf)
+{
+    char *supi = NULL, *ref = NULL;
+
+    ogs_assert(buf);
+
+    if (!supi_or_suci || !supi_or_suci[0])
+        return NULL;
+
+    if (!otel_is_null_scheme_suci(supi_or_suci))
+        return ogs_otel_ue_ref(supi_or_suci, buf);
+
+    /* Same reference as for the SUPI (and as the dashboard's IMSI search) */
+    supi = ogs_supi_from_suci(supi_or_suci);
+    ref = ogs_otel_ue_ref(supi ? supi : supi_or_suci, buf);
+    if (supi)
+        ogs_free(supi);
+    return ref;
+}
+
 static void otel_set_ue_ref(ogs_otel_span_t *span, const char *supi_or_suci)
 {
     char ue_ref[OGS_OTEL_UE_REF_LEN];
-    char *supi = NULL;
 
-    if (!span || !supi_or_suci)
-        return;
-
-    if (!strncmp(supi_or_suci, "imsi-", 5)) {
-        if (ogs_otel_ue_ref(supi_or_suci, ue_ref))
-            ogs_otel_span_set_str(span, OGS_OTEL_ATTR_UE_REF, ue_ref);
-    } else if (otel_is_null_scheme_suci(supi_or_suci)) {
-        /* Same reference as the AMF/SMF spans, which use the SUPI */
-        supi = ogs_supi_from_suci(supi_or_suci);
-        if (supi && ogs_otel_ue_ref(supi, ue_ref))
-            ogs_otel_span_set_str(span, OGS_OTEL_ATTR_UE_REF, ue_ref);
-        if (supi)
-            ogs_free(supi);
-    }
+    if (span && ogs_sbi_otel_ue_ref(supi_or_suci, ue_ref))
+        ogs_otel_span_set_str(span, OGS_OTEL_ATTR_UE_REF, ue_ref);
 }
 
 void ogs_sbi_server_otel_request(
