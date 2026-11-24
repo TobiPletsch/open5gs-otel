@@ -17,7 +17,7 @@ import sys
 DS = {"type": "grafana-clickhouse-datasource",
       "uid": os.environ.get("DS_UID", "ClickHouse")}
 FORMAT = {"timeseries": 0, "table": 1, "logs": 2, "traces": 3}
-NS = "open5gs-ns"
+NS = "open5gs-otel"
 UID = "open5gs-otel-poc"
 TRACE_LINK = ("/d/" + UID + "/open5gs-otel-poc?${__url_time_range}"
               "&var-trace_id=${__value.raw}")

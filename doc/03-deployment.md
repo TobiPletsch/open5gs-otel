@@ -4,7 +4,7 @@
 
 | Component | Cluster / namespace | Git repo (path) | Flux Kustomization |
 |---|---|---|---|
-| Open5GS core (all NFs) + UERANSIM gNB/UEs | pub-k8s, `open5gs-ns`, pinned to `k8s-worker3` | GitLab `tobias.pletsch/open5gs` (`open5gs/`, `ueransim/`), clone `~/tobi_projects/open5gs` on `pub-k8s-cp` | `open5gs-clab` |
+| Open5GS core (all NFs) + UERANSIM gNB/UEs | pub-k8s, `open5gs-otel`, pinned to `k8s-worker3` | GitLab `tobias.pletsch/open5gs` (`open5gs-otel/`, `ueransim/`), clone `~/tobi_projects/open5gs` on `pub-k8s-cp` | `open5gs-clab` |
 | otel-agent, Kafka, otel-gateway, ClickHouse, Grafana | pub-k8s, `observability` | GitLab `dta9-workloads` (`observability/`) | `wl-observability` |
 | Public Grafana (behind Authelia/NGINX) | pub-nuc, `observability` | GitHub `assurance-services` (`apps/observability/`), wired by `factory_infra/clusters/nuc-cluster/observability.yaml` | `observability` |
 | Source + image build | `pub-k8s-w3` host | GitHub `TobiPletsch/open5gs-otel`, branch `otel-poc` | – (built manually, see [02](02-build.md)) |
@@ -31,7 +31,7 @@ amf:
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
       value: http://otel-agent.observability.svc.cluster.local:4318
     - name: OTEL_RESOURCE_ATTRIBUTES
-      value: deployment.environment=open5gs-ns
+      value: deployment.environment=open5gs-otel
   metrics:
     enabled: true               # AMF registration counters for the dashboard
 smf:
@@ -50,7 +50,7 @@ Why each part is there:
 * **One image for all NFs.** This avoids mixing Open5GS versions.
 * **`OTEL_EXPORTER_OTLP_ENDPOINT`.** Only the AMF and SMF get it, so only they
   export spans. The other NFs run the same binary with tracing off.
-* **`deployment.environment=open5gs-ns`.** This resource attribute is what the
+* **`deployment.environment=open5gs-otel`.** This resource attribute is what the
   dashboard filters on. It separates the PoC from the other Open5GS deployment
   in namespace `open5gs`.
 * **`OGS_OTEL_UE_REF_SALT`.** Not set, so the default salt is used. Set it via
@@ -64,9 +64,9 @@ image 3.3.0) is unchanged: PLMN 999/70, slice SST 1 / SD `0x111111`, TAC 1, and
 
 ```
 AMF/SMF --OTLP/HTTP :4318--> otel-agent (DaemonSet, hostPort 4318)
-AMF/SMF stdout --> /var/log/pods/open5gs-ns_*/... --filelog--> otel-agent
+AMF/SMF stdout --> /var/log/pods/open5gs-otel_*/... --filelog--> otel-agent
 otel-agent --> Kafka topics otlp-traces / otlp-logs / otlp-metrics
-otel-gateway <-- Kafka, + Prometheus scrape of open5gs-{amf,smf}-metrics.open5gs-ns:9090
+otel-gateway <-- Kafka, + Prometheus scrape of open5gs-{amf,smf}-metrics.open5gs-otel:9090
 otel-gateway --clickhouse exporter (ttl 72h)--> ClickHouse default.otel_traces / otel_logs / otel_metrics_*
 ```
 
@@ -74,9 +74,9 @@ PoC-specific additions to `observability/otel.yaml`:
 
 | Change | Why |
 |---|---|
-| filelog `include: /var/log/pods/open5gs-ns_*/*/*.log` | Collect the PoC core's logs, not only namespace `open5gs` |
+| filelog `include: /var/log/pods/open5gs-otel_*/*/*.log` | Collect the PoC core's logs, not only namespace `open5gs` |
 | processor **`transform/open5gs`** in the logs pipeline | Turns the text marker into real log/trace correlation (below) |
-| scrape jobs `open5gs-ns-amf` and `open5gs-ns-smf` (15 s), label `namespace: open5gs-ns` | Existing Prometheus counters of the PoC core. The dashboard filters on `Attributes['namespace']` |
+| scrape jobs `open5gs-otel-amf` and `open5gs-otel-smf` (15 s), label `namespace: open5gs-otel` | Existing Prometheus counters of the PoC core. The dashboard filters on `Attributes['namespace']` |
 | `batch/metrics` (send_batch_size 250, max 500) in the agent's metrics pipeline | Bigger batches exceeded Kafka's 1 MB message limit. The endlessly retried batches filled the agent's memory, and `memory_limiter` then refused **all** signals |
 | agent memory 128Mi request / 512Mi limit | Headroom for the above |
 | gateway: `memory_limiter` in all pipelines, memory 256Mi request / 1Gi limit | After a restart the gateway consumed the whole Kafka backlog at once and was OOM-killed at 300Mi in a loop (2026-11-12), so nothing reached ClickHouse |

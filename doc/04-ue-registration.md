@@ -4,7 +4,7 @@ What the registration and the PDU session consist of is explained in
 [07-registration-walkthrough.md](07-registration-walkthrough.md).
 
 The UEs are simulated by UERANSIM in the pod
-`deploy/ueransim-ueransim-gnb-ues`, namespace `open5gs-ns`. The pod runs
+`deploy/ueransim-ueransim-gnb-ues`, namespace `open5gs-otel`. The pod runs
 `nr-ue -n 10`, i.e. 10 UEs `imsi-999700000000001` … `imsi-999700000000010`.
 At start-up each UE registers and establishes one PDU session (DNN `internet`,
 SST 1, SD `0x111111`).
@@ -18,7 +18,7 @@ below, or widen the time range.
 All commands run on `pub-k8s-cp`, or anywhere with a kubeconfig for pub-k8s:
 
 ```sh
-NS=open5gs-ns
+NS=open5gs-otel
 UE=deploy/ueransim-ueransim-gnb-ues
 GNB=deploy/ueransim-ueransim-gnb
 ```
@@ -140,7 +140,7 @@ kubectl -n observability exec clickhouse-0 -- clickhouse-client -q "
   SELECT SpanName, SpanAttributes['5gs.outcome'] AS outcome, count()
   FROM otel_traces
   WHERE Timestamp > now() - INTERVAL 10 MINUTE
-    AND ResourceAttributes['deployment.environment'] = 'open5gs-ns'
+    AND ResourceAttributes['deployment.environment'] = 'open5gs-otel'
   GROUP BY SpanName, outcome"
 ```
 

@@ -39,7 +39,7 @@ Attributes use a `5gs.*` namespace plus `error.type`; UEs appear only as
 | Variable | Example |
 |---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-agent.observability.svc.cluster.local:4318` (tracing is off without it) |
-| `OTEL_RESOURCE_ATTRIBUTES` | `deployment.environment=open5gs-ns` |
+| `OTEL_RESOURCE_ATTRIBUTES` | `deployment.environment=open5gs-otel` |
 | `OTEL_SERVICE_NAME` | default `open5gs-amf` / `open5gs-smf` |
 | `OTEL_SDK_DISABLED` | `true` disables tracing |
 | `OGS_OTEL_UE_REF_SALT` | salt for `5gs.ue.ref` |

@@ -21,7 +21,7 @@ import sys
 
 DS = {"type": "grafana-clickhouse-datasource",
       "uid": os.environ.get("DS_UID", "ClickHouse")}
-NS = "open5gs-ns"
+NS = "open5gs-otel"
 UID = "open5gs-otel-poc-light"
 UE_REF_SALT = os.environ.get("UE_REF_SALT", "open5gs-otel-poc")
 TRACE_LINK = ("/d/" + UID + "/otel-poc-trace-and-logs-light?${__url_time_range}"

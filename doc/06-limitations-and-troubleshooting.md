@@ -48,7 +48,7 @@
 |---|---|
 | Dashboard shows logs but no traces | No procedure ran in the selected time range. Widen the range or trigger registrations or sessions ([04](04-ue-registration.md)). Traces older than 72 h are deleted. |
 | No spans at all, AMF/SMF log has no `[otel] tracing enabled` on stderr at start | `OTEL_EXPORTER_OTLP_ENDPOINT` not set, `OTEL_SDK_DISABLED=true`, or an image built with `-Dotel=false` |
-| Spans in ClickHouse, but the logs panel is empty for a trace | Check that `transform/open5gs` is in the agent's logs pipeline and that the filelog `include` covers `open5gs-ns`. In ClickHouse: `SELECT count() FROM otel_logs WHERE TraceId = '<id>'`. Also check the time range, because the logs query uses `$__timeFilter`. |
+| Spans in ClickHouse, but the logs panel is empty for a trace | Check that `transform/open5gs` is in the agent's logs pipeline and that the filelog `include` covers `open5gs-otel`. In ClickHouse: `SELECT count() FROM otel_logs WHERE TraceId = '<id>'`. Also check the time range, because the logs query uses `$__timeFilter`. |
 | Collector drops everything (`memory_limiter` refusals) | Metric batches over Kafka's 1 MB limit. Keep `batch/metrics` (max 500 data points) in the agent. |
 | Pods `ErrImageNeverPulled` / `ImagePullBackOff` | The image tag is not imported on `k8s-worker3` (`sudo ctr -n k8s.io images ls \| grep open5gs-otel`), or the pod was scheduled on another node |
 | Registration Reject #90 or PDU Session Establishment Reject after a rollout | Stale NF state, run `scripts/restart-core.sh` |
@@ -63,7 +63,7 @@
 
 * Done: per-request SBI/PFCP spans in AMF and SMF, `traceparent` AMF ↔ SMF,
   linked registration/session traces ([08](08-distributed-tracing.md)).
-* Exclude AMF/SMF (or `open5gs-ns`) from Beyla to avoid duplicate SBI spans.
+* Exclude AMF/SMF (or `open5gs-otel`) from Beyla to avoid duplicate SBI spans.
 * The same for AUSF, UDM, PCF, UPF, reusing the API from 08.
 * Use OTel logs (OTLP) instead of text markers. Structured attributes would
   also allow removing SUPIs from the log body.

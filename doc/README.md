@@ -33,7 +33,7 @@ Grafana next to the existing Prometheus metrics and the NF logs.
 
 ```mermaid
 flowchart LR
-  subgraph w3["pub-k8s / k8s-worker3, namespace open5gs-ns"]
+  subgraph w3["pub-k8s / k8s-worker3, namespace open5gs-otel"]
     AMF["open5gs-amf<br/>(otel-poc image)"]
     SMF["open5gs-smf<br/>(otel-poc image)"]
     UE["UERANSIM gNB + 10 UEs"]
@@ -74,7 +74,7 @@ flowchart LR
 ### UERANSIM on/off (on `pub-k8s-cp`)
 
 ```sh
-NS=open5gs-ns
+NS=open5gs-otel
 UE=deploy/ueransim-ueransim-gnb-ues
 GNB=deploy/ueransim-ueransim-gnb
 

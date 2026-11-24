@@ -47,7 +47,7 @@ Approach:
 * **Automatic trace ID.** `ogs_metrics_inst_add()` attaches the current span
   (`lib/otel` active span) automatically. `lib/metrics` then depends on
   `lib/otel` (already built before it).
-* **Collector.** Enable OpenMetrics scraping for the `open5gs-ns` jobs and
+* **Collector.** Enable OpenMetrics scraping for the `open5gs-otel` jobs and
   check how the `_total` names arrive in ClickHouse.
 * **Dashboard.** Counter panels get an exemplar overlay with trace links.
 

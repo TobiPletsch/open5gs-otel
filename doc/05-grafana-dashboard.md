@@ -103,8 +103,8 @@ The dashboard variable is `trace_id`, a textbox. It is set by clicking a
 ### Panels and their queries
 
 All trace queries filter on
-`ResourceAttributes['deployment.environment'] = 'open5gs-ns'`. All metric
-queries filter on `Attributes['namespace'] = 'open5gs-ns'`.
+`ResourceAttributes['deployment.environment'] = 'open5gs-otel'`. All metric
+queries filter on `Attributes['namespace'] = 'open5gs-otel'`.
 
 | Panel | Source table | What it computes |
 |---|---|---|
