@@ -21,6 +21,7 @@
 #include "gtp-path.h"
 #include "pfcp-path.h"
 #include "metrics.h"
+#include "otel.h"
 
 static ogs_thread_t *thread;
 static void upf_main(void *data);
@@ -36,6 +37,14 @@ int upf_initialize(void)
     if (rv != OGS_OK) return rv;
 
     upf_metrics_init();
+
+    /*
+     * OpenTelemetry PoC: SERVER span per traced N4 session request (the
+     * SMF sends its trace context in an enterprise-specific PFCP IE), see
+     * otel.h. No-op without OTEL_EXPORTER_OTLP_ENDPOINT.
+     */
+    ogs_otel_init("open5gs-upf", ogs_app()->version);
+    upf_otel_init();
 
     ogs_gtp_context_init(OGS_MAX_NUM_OF_GTPU_RESOURCE);
     ogs_pfcp_context_init();
@@ -106,6 +115,8 @@ void upf_terminate(void)
     upf_event_final();
 
     upf_metrics_final();
+
+    ogs_otel_final();
 }
 
 static void upf_main(void *data)
@@ -146,6 +157,9 @@ static void upf_main(void *data)
 
             ogs_assert(e);
             ogs_fsm_dispatch(&upf_sm, e);
+
+            /* OpenTelemetry PoC: no trace context leaks into the next event */
+            ogs_otel_span_activate(NULL);
             upf_event_free(e);
         }
     }

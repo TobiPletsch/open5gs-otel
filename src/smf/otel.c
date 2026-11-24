@@ -248,6 +248,11 @@ void smf_otel_pfcp_start(smf_sess_t *sess,
 
     sess->pfcp_span_xact_id = xact->id;
     ogs_otel_span_set_str(sess->pfcp_span, "5gs.pfcp.message", name);
+
+    /* trace context to the UPF (enterprise-specific IE, lib/pfcp/xact.c) */
+    ogs_assert(sizeof(xact->otel_traceparent) >= OGS_OTEL_TRACEPARENT_LEN);
+    if (!ogs_otel_span_traceparent(sess->pfcp_span, xact->otel_traceparent))
+        xact->otel_traceparent[0] = 0;
     ogs_otel_span_set_int(sess->pfcp_span, "5gs.pfcp.xid", xact->xid);
 }
 

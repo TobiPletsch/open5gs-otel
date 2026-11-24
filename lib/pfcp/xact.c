@@ -43,6 +43,78 @@ static int ogs_pfcp_xact_update_rx(ogs_pfcp_xact_t *xact, uint8_t type);
 
 static void response_timeout(void *data);
 
+void (*ogs_pfcp_xact_otel_end_hook)(ogs_pfcp_xact_t *xact, int cause);
+
+/* OpenTelemetry PoC: top-level IE of a PFCP message body, NULL if absent */
+static const uint8_t *pfcp_otel_find_ie(const uint8_t *p, int len,
+        uint16_t type, uint16_t *ie_len)
+{
+    while (len >= 4) {
+        uint16_t t = (uint16_t)((p[0] << 8) | p[1]);
+        uint16_t l = (uint16_t)((p[2] << 8) | p[3]);
+
+        if (4 + (int)l > len)
+            return NULL;
+        if (t == type) {
+            *ie_len = l;
+            return p + 4;
+        }
+        p += 4 + l;
+        len -= 4 + l;
+    }
+    return NULL;
+}
+
+bool ogs_pfcp_otel_traceparent(ogs_pkbuf_t *body, char *buf, size_t size)
+{
+    const uint8_t *v = NULL;
+    uint16_t len = 0;
+
+    ogs_assert(buf);
+    buf[0] = 0;
+    if (!body || !body->len)
+        return false;
+
+    v = pfcp_otel_find_ie(body->data, body->len,
+            OGS_PFCP_OTEL_TRACEPARENT_TYPE, &len);
+    if (!v || len < 2 + 55 || (size_t)(len - 2) >= size ||
+            ((v[0] << 8) | v[1]) != OGS_PFCP_OTEL_ENTERPRISE_ID)
+        return false;
+
+    memcpy(buf, v + 2, len - 2);
+    buf[len - 2] = 0;
+    return true;
+}
+
+/* OpenTelemetry PoC: append the traceparent IE to a request body */
+static ogs_pkbuf_t *pfcp_otel_append(ogs_pkbuf_t *pkbuf, const char *tp)
+{
+    size_t n = strlen(tp);
+    unsigned int ie = 4 + 2 + n;
+    uint8_t *p = NULL;
+
+    if (ogs_pkbuf_tailroom(pkbuf) < (int)ie) {
+        ogs_pkbuf_t *copy = ogs_pkbuf_alloc(
+                NULL, OGS_TLV_MAX_HEADROOM + pkbuf->len + ie);
+        if (!copy)
+            return pkbuf;           /* send it without trace context */
+        ogs_pkbuf_reserve(copy, OGS_TLV_MAX_HEADROOM);
+        ogs_pkbuf_put_data(copy, pkbuf->data, pkbuf->len);
+        ogs_pkbuf_free(pkbuf);
+        pkbuf = copy;
+    }
+
+    p = ogs_pkbuf_put(pkbuf, ie);
+    p[0] = OGS_PFCP_OTEL_TRACEPARENT_TYPE >> 8;
+    p[1] = OGS_PFCP_OTEL_TRACEPARENT_TYPE & 0xff;
+    p[2] = (uint8_t)((2 + n) >> 8);
+    p[3] = (uint8_t)((2 + n) & 0xff);
+    p[4] = OGS_PFCP_OTEL_ENTERPRISE_ID >> 8;
+    p[5] = OGS_PFCP_OTEL_ENTERPRISE_ID & 0xff;
+    memcpy(p + 6, tp, n);
+    return pkbuf;
+}
+
 void (*ogs_pfcp_xact_retransmit_hook)(
         ogs_pfcp_xact_t *xact, int retransmission) = NULL;
 static void holding_timeout(void *data);
@@ -290,6 +362,22 @@ int ogs_pfcp_xact_update_tx(ogs_pfcp_xact_t *xact,
         ogs_error("invalid org[%d] type[%d]", xact->org, hdesc->type);
         ogs_pkbuf_free(pkbuf);
         return OGS_ERROR;
+    }
+
+    /*
+     * OpenTelemetry PoC: trace context into a local request; end the
+     * SERVER span of a received request with the Cause of its response.
+     */
+    if (xact->org == OGS_PFCP_LOCAL_ORIGINATOR && xact->step == 0 &&
+            xact->otel_traceparent[0]) {
+        pkbuf = pfcp_otel_append(pkbuf, xact->otel_traceparent);
+    } else if (xact->org == OGS_PFCP_REMOTE_ORIGINATOR && xact->otel_span) {
+        uint16_t len = 0;
+        const uint8_t *cause = pfcp_otel_find_ie(pkbuf->data, pkbuf->len,
+                OGS_PFCP_CAUSE_TYPE, &len);
+        if (ogs_pfcp_xact_otel_end_hook)
+            ogs_pfcp_xact_otel_end_hook(xact, cause && len ? cause[0] : -1);
+        xact->otel_span = NULL;
     }
 
     if (hdesc->type >= OGS_PFCP_SESSION_ESTABLISHMENT_REQUEST_TYPE) {
@@ -846,6 +934,13 @@ int ogs_pfcp_xact_delete(ogs_pfcp_xact_t *xact)
             xact->xid,
             xact->org == OGS_PFCP_LOCAL_ORIGINATOR ? "LOCAL " : "REMOTE",
             ogs_sockaddr_to_string_static(xact->node->addr_list));
+
+    /* OpenTelemetry PoC: request removed without a response */
+    if (xact->otel_span) {
+        if (ogs_pfcp_xact_otel_end_hook)
+            ogs_pfcp_xact_otel_end_hook(xact, 0);
+        xact->otel_span = NULL;
+    }
 
     if (xact->seq[0].pkbuf)
         ogs_pkbuf_free(xact->seq[0].pkbuf);

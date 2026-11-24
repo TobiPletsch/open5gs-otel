@@ -68,6 +68,7 @@ libupf_sources = files('''
     pfcp-path.c
     n4-build.c
     n4-handler.c
+    otel.c
 '''.split())
 
 libtins_dep = dependency('libtins',
@@ -89,6 +90,7 @@ libupf = static_library('upf',
     sources : libupf_sources,
     dependencies : [
         libmetrics_dep,
+        libotel_dep,
         libpfcp_dep,
         libtun_dep,
         libarp_nd_dep,
@@ -99,6 +101,7 @@ libupf_dep = declare_dependency(
     link_with : libupf,
     dependencies : [
         libmetrics_dep,
+        libotel_dep,
         libpfcp_dep,
         libtun_dep,
         libarp_nd_dep,

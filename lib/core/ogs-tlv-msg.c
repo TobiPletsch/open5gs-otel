@@ -669,7 +669,16 @@ static int tlv_parse_compound(void *msg, ogs_tlv_desc_t *parent_desc,
             return OGS_ERROR;
         desc = tlv_find_desc_by_type_inst(&index, &offset, parent_desc, tlv->type, tlv->instance, curr_count->count);
         if (desc == NULL) {
-            ogs_warn("Unknown TLV type [%d]", tlv->type);
+            /*
+             * Enterprise-specific IEs (type >= 32768, TS 29.244 8.1.1) are
+             * ignored by design, e.g. the OpenTelemetry PoC's traceparent IE
+             * on N4 - no warning per message for them.
+             */
+            if (tlv->type >= 32768)
+                ogs_debug("Enterprise-specific TLV type [%d] ignored",
+                        tlv->type);
+            else
+                ogs_warn("Unknown TLV type [%d]", tlv->type);
             tlv = tlv->next;
             continue;
         }

@@ -21,6 +21,7 @@
 #include "pfcp-path.h"
 #include "gtp-path.h"
 #include "n4-handler.h"
+#include "otel.h"
 
 static void upf_n4_handle_create_urr(upf_sess_t *sess,
         ogs_pfcp_tlv_create_urr_t *create_urr,
@@ -259,6 +260,9 @@ void upf_n4_handle_session_establishment_request(
             ogs_pfcp_send_buffered_gtpu(pdr);
         }
     }
+
+    /* OpenTelemetry PoC: before the response ends the span */
+    upf_otel_n4_session(xact, sess, num_of_created_pdr);
 
     if (restoration_indication == true ||
         ogs_pfcp_self()->up_function_features.ftup == 0)
@@ -516,6 +520,9 @@ void upf_n4_handle_session_modification_request(
         }
     }
 
+    /* OpenTelemetry PoC: before the response ends the span */
+    upf_otel_n4_session(xact, sess, num_of_created_pdr);
+
     if (ogs_pfcp_self()->up_function_features.ftup == 0)
         ogs_assert(OGS_OK ==
             upf_pfcp_send_session_modification_response(
@@ -575,6 +582,7 @@ void upf_n4_handle_session_deletion_request(
                 OGS_PFCP_CAUSE_SESSION_CONTEXT_NOT_FOUND, 0);
         return;
     }
+    upf_otel_n4_session(xact, sess, 0);   /* OpenTelemetry PoC */
     upf_pfcp_send_session_deletion_response(xact, sess);
 
     ogs_list_for_each(&sess->pfcp.qer_list, qer) {

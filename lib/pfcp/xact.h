@@ -131,6 +131,22 @@ typedef struct ogs_pfcp_xact_s {
 
     ogs_list_t      pdr_to_create_list;
     ogs_list_t      bearer_to_modify_list;
+
+    /*
+     * OpenTelemetry PoC (lib/pfcp itself has no OTel dependency):
+     *
+     * otel_traceparent  sender (SMF): W3C traceparent of its PFCP CLIENT
+     *                   span. ogs_pfcp_xact_update_tx() appends it to the
+     *                   request as an enterprise-specific IE (TS 29.244
+     *                   8.1.1, IE type >= 32768, ignored by other peers).
+     * otel_span         receiver (UPF): opaque SERVER span of the request.
+     *                   Ended through ogs_pfcp_xact_otel_end_hook when the
+     *                   response is sent (with its Cause) or when the
+     *                   transaction is deleted without a response.
+     */
+#define OGS_PFCP_OTEL_TRACEPARENT_LEN 56
+    char            otel_traceparent[OGS_PFCP_OTEL_TRACEPARENT_LEN];
+    void            *otel_span;
 } ogs_pfcp_xact_t;
 
 /*
@@ -140,6 +156,24 @@ typedef struct ogs_pfcp_xact_s {
  */
 extern void (*ogs_pfcp_xact_retransmit_hook)(
         ogs_pfcp_xact_t *xact, int retransmission);
+
+/*
+ * OpenTelemetry PoC: trace context over PFCP.
+ *
+ * IE OGS_PFCP_OTEL_TRACEPARENT_TYPE: Enterprise ID OGS_PFCP_OTEL_ENTERPRISE_ID
+ * (2 octets, not registered - PoC only) followed by the traceparent string.
+ *
+ * ogs_pfcp_otel_traceparent() finds it in a received message body (the
+ * pkbuf after ogs_pfcp_parse_msg(), i.e. without the PFCP header).
+ *
+ * ogs_pfcp_xact_otel_end_hook(xact, cause) is called once for a received
+ * request with xact->otel_span set: cause = Cause IE of the response,
+ * -1 = response without Cause IE, 0 = no response (transaction deleted).
+ */
+#define OGS_PFCP_OTEL_TRACEPARENT_TYPE 0xFF01
+#define OGS_PFCP_OTEL_ENTERPRISE_ID 0xFFFF
+bool ogs_pfcp_otel_traceparent(ogs_pkbuf_t *body, char *buf, size_t size);
+extern void (*ogs_pfcp_xact_otel_end_hook)(ogs_pfcp_xact_t *xact, int cause);
 
 int ogs_pfcp_xact_init(void);
 void ogs_pfcp_xact_final(void);
